@@ -43,43 +43,48 @@ const ui = new UI(wallet);
 const minimap = new Minimap();
 const input = new Input(canvas);
 
-// ---- floating win labels over bot cowboys ----
+// ---- floating win tags above cows caught by bot cowboys ----
 const floaters = [];
 function spawnFloater(worldPos, text, big) {
   const el = document.createElement('div');
   el.className = 'floater' + (big ? ' big' : '');
   el.textContent = text;
   document.getElementById('hud').appendChild(el);
-  floaters.push({ el, pos: worldPos.clone().add(new THREE.Vector3(0, 2.3, 0)), age: 0 });
+  floaters.push({ el, pos: worldPos.clone().add(new THREE.Vector3(0, 1.7, 0)), age: 0 });
 }
 
 function updateFloaters(dt) {
   for (let i = floaters.length - 1; i >= 0; i--) {
     const f = floaters[i];
     f.age += dt;
-    f.pos.y += dt * 0.7;
-    if (f.age > 2.4) { f.el.remove(); floaters.splice(i, 1); continue; }
+    f.pos.y += dt * 0.55;
+    if (f.age > 2.8) { f.el.remove(); floaters.splice(i, 1); continue; }
     _proj.copy(f.pos).project(camera);
-    const visible = _proj.z < 1;
+    let x = (_proj.x * 0.5 + 0.5) * window.innerWidth;
+    let y = (-_proj.y * 0.5 + 0.5) * window.innerHeight;
+    // only shown while the spot is actually in frame
+    const visible = _proj.z < 1 && x > -20 && x < window.innerWidth + 20 && y > -20 && y < window.innerHeight + 20;
     f.el.style.display = visible ? '' : 'none';
     if (visible) {
-      f.el.style.left = `${(_proj.x * 0.5 + 0.5) * window.innerWidth}px`;
-      f.el.style.top = `${(-_proj.y * 0.5 + 0.5) * window.innerHeight}px`;
-      f.el.style.opacity = f.age > 1.6 ? String(1 - (f.age - 1.6) / 0.8) : '1';
+      // keep the pill fully readable when the catch is near a screen edge
+      x = Math.min(Math.max(x, 70), window.innerWidth - 70);
+      y = Math.min(Math.max(y, 44), window.innerHeight - 14);
+      f.el.style.left = `${x}px`;
+      f.el.style.top = `${y}px`;
+      f.el.style.opacity = f.age > 2 ? String(1 - (f.age - 2) / 0.8) : '1';
     }
   }
 }
 
-// simulated multiplayer: rival cowboys working the same range
-const bots = new Bots(scene, world, (bot, win, mult) => {
+// simulated multiplayer: rival cowboys working the same range. Wins show as a
+// small name+prize tag above the caught cow (only while it's in frame).
+const bots = new Bots(scene, world, (bot, win, mult, cowPos) => {
   const big = mult >= 4;
-  ui.toast(
-    big ? `&#127808; ${bot.name} hit ${mult}&times; &mdash; lucky herd!`
-        : `&#129312; ${bot.name} wrangled +${fmt(win)}`,
-    'gold'
+  spawnFloater(
+    cowPos,
+    big ? `${bot.name} +${fmt(win)} · ${mult}×!` : `${bot.name} +${fmt(win)}`,
+    big
   );
-  spawnFloater(bot.pos, `+${fmt(win)}`, big);
-  if (big) sfx.coin();
 });
 
 let state = 'menu';            // menu | transition | playing

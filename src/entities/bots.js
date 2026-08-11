@@ -122,7 +122,7 @@ class Bot {
         let best = null, bestD = 65;
         for (const c of herd.cows) {
           if (c.kind !== 'standard' || c.captured || c.state === 'lassoed' || c.claimedBy) continue;
-          if (c.pos.distanceTo(player.pos) < 22) continue; // leave the player's quarry alone
+          if (c.pos.distanceTo(player.pos) < 18) continue; // leave the player's quarry alone
           const d = c.pos.distanceTo(this.pos);
           if (d < bestD) { best = c; bestD = d; }
         }
@@ -139,7 +139,7 @@ class Bot {
     } else if (this.state === 'hunt') {
       const c = this.target;
       if (!c || c.captured || c.state === 'lassoed' || this.stateT <= 0 ||
-          c.pos.distanceTo(player.pos) < 16) {
+          c.pos.distanceTo(player.pos) < 12) {
         this._unclaim();
         this.state = 'roam';
         this.stateT = 2 + Math.random() * 4;
@@ -193,7 +193,7 @@ class Bot {
         if (this.outcome.win) {
           const win = round2(this.outcome.mult * this.tier.bet);
           effects.burst(c.pos.clone().add(new THREE.Vector3(0, 1.2, 0)), 0xf2b632, 26, 4, 4);
-          onWin(this, win, this.outcome.mult);
+          onWin(this, win, this.outcome.mult, c.pos.clone());
           herd.remove(c);
           this._unclaim();
           this.lasso.releaseToIdle();

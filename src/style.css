@@ -167,21 +167,26 @@ body.touch-mode #joystick-base { display: block; }
   opacity: .85;
 }
 
-/* floating win labels over bot cowboys */
+/* small name+prize tag above a cow caught by a bot cowboy */
 .floater {
   position: absolute;
   transform: translate(-50%, -100%);
+  background: rgba(24, 14, 5, 0.85);
+  border: 1.5px solid var(--gold-deep);
+  border-radius: 999px;
+  padding: 3px 10px;
   color: #ffd968;
-  font-weight: 900;
-  font-size: 15px;
-  text-shadow: 0 1px 2px rgba(0,0,0,.85), 0 0 8px rgba(242,182,50,.35);
+  font-weight: 800;
+  font-size: 12.5px;
   pointer-events: none;
   white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0,0,0,.4);
 }
 .floater.big {
-  font-size: 19px;
+  font-size: 14.5px;
   color: #ffe9a8;
-  text-shadow: 0 1px 3px rgba(0,0,0,.9), 0 0 14px rgba(242,182,50,.7);
+  border-color: var(--gold);
+  box-shadow: 0 2px 8px rgba(0,0,0,.5), 0 0 12px rgba(242,182,50,.45);
 }
 
 /* ============ rider popup (offer / crash) ============ */
