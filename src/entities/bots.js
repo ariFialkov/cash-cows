@@ -4,7 +4,7 @@
 // the range feel alive and lucky.
 
 import * as THREE from 'three';
-import { HorseRider } from './horse.js';
+import { HorseRider, updateJump, applyJumpPose } from './horse.js';
 import { Lasso } from '../lasso/lasso.js';
 import { PEN_HALF } from '../world/world.js';
 import { LASSO_TIERS, drawOutcome, round2 } from '../game/economy.js';
@@ -33,6 +33,9 @@ class Bot {
     this.speed = 0;
     this._turnRate = 0;
     this.armPose = 'spin';
+    this.jump = null;
+    this.jumpCooldown = Math.random(); // desync first jumps
+    this.landT = 0;
 
     this.tier = LASSO_TIERS[i % LASSO_TIERS.length];
     this.lasso = new Lasso(scene, world);
@@ -90,7 +93,9 @@ class Bot {
     const B = PEN_HALF - 2;
     this.pos.x = THREE.MathUtils.clamp(this.pos.x, -B, B);
     this.pos.z = THREE.MathUtils.clamp(this.pos.z, -B, B);
-    this.pos.y = this.world.heightAt(this.pos.x, this.pos.z);
+    // bots take the same equestrian jumps over rocks/bushes (silently)
+    const jumpY = updateJump(this, this.world, dt, false);
+    this.pos.y = this.world.heightAt(this.pos.x, this.pos.z) + jumpY;
     this.obj.position.copy(this.pos);
     this.obj.rotation.y = this.heading;
     return dist;
@@ -209,6 +214,7 @@ class Bot {
 
     if (vis) {
       this.rig.animate(dt, this.speed, this._turnRate, this.armPose, time);
+      applyJumpPose(this);
       this.lasso.update(dt, this, time);
     }
   }

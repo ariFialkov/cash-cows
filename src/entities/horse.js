@@ -447,6 +447,55 @@ export class HorseRider {
 }
 
 // ---------------------------------------------------------------------------
+// Shared equestrian jump over world obstacles (rocks/bushes). Works on any
+// rider-like object with { pos, heading, speed, rig } plus the jump fields.
+// Returns this frame's vertical offset.
+
+export function updateJump(rider, world, dt, audible) {
+  rider.jumpCooldown -= dt;
+  if (rider.landT > 0) rider.landT -= dt;
+  if (!rider.jump && rider.jumpCooldown <= 0 && rider.speed > 4.5 && world.obstacles) {
+    const fx = Math.sin(rider.heading), fz = Math.cos(rider.heading);
+    const look = 1.2 + rider.speed * 0.28;
+    for (const o of world.obstacles) {
+      const dx = o.x - rider.pos.x, dz = o.z - rider.pos.z;
+      if (dx * dx + dz * dz > look * look) continue;
+      const along = dx * fx + dz * fz;            // distance ahead
+      if (along < 0.4) continue;                   // behind or beside
+      if (Math.abs(dx * fz - dz * fx) > o.r + 0.4) continue; // off the line
+      const T = (along + o.r + 1.7) / Math.max(rider.speed, 5.5);
+      rider.jump = { t: 0, T: Math.min(T, 0.95), h: Math.min(1.15, 0.55 + o.h * 0.55) };
+      if (audible) sfx.jump();
+      break;
+    }
+  }
+  let jumpY = 0;
+  rider.jumpFrac = 0;
+  if (rider.jump) {
+    rider.jump.t += dt;
+    const f = Math.min(1, rider.jump.t / rider.jump.T);
+    rider.jumpFrac = f;
+    jumpY = Math.sin(f * Math.PI) * rider.jump.h;
+    if (f >= 1) {
+      rider.jump = null;
+      rider.jumpCooldown = 0.8;
+      rider.landT = 0.22;
+      jumpY = 0;
+      if (audible) sfx.land();
+    }
+  }
+  return jumpY;
+}
+
+// call after rig.animate so the jump pose blends over the gait
+export function applyJumpPose(rider) {
+  if (rider.jump) rider.rig.applyJump(rider.jumpFrac);
+  else if (rider.landT > 0) {
+    rider.rig.body.position.y -= Math.sin((rider.landT / 0.22) * Math.PI) * 0.06;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Player: movement physics wrapping the rig.
 
 export class Player {
@@ -498,47 +547,13 @@ export class Player {
     this.pos.x = THREE.MathUtils.clamp(this.pos.x, -B, B);
     this.pos.z = THREE.MathUtils.clamp(this.pos.z, -B, B);
 
-    // --- equestrian jump over rocks and bushes in the path ---
-    this.jumpCooldown -= dt;
-    if (this.landT > 0) this.landT -= dt;
-    if (!this.jump && this.jumpCooldown <= 0 && this.speed > 4.5 && this.world.obstacles) {
-      const fx = Math.sin(this.heading), fz = Math.cos(this.heading);
-      const look = 1.2 + this.speed * 0.28;
-      for (const o of this.world.obstacles) {
-        const dx = o.x - this.pos.x, dz = o.z - this.pos.z;
-        if (dx * dx + dz * dz > look * look) continue;
-        const along = dx * fx + dz * fz;            // distance ahead
-        if (along < 0.4) continue;                   // behind or beside
-        if (Math.abs(dx * fz - dz * fx) > o.r + 0.4) continue; // off the line
-        const T = (along + o.r + 1.7) / Math.max(this.speed, 5.5);
-        this.jump = { t: 0, T: Math.min(T, 0.95), h: Math.min(1.15, 0.55 + o.h * 0.55) };
-        sfx.jump();
-        break;
-      }
-    }
-    let jumpY = 0, jumpFrac = 0;
-    if (this.jump) {
-      this.jump.t += dt;
-      jumpFrac = Math.min(1, this.jump.t / this.jump.T);
-      jumpY = Math.sin(jumpFrac * Math.PI) * this.jump.h;
-      if (jumpFrac >= 1) {
-        this.jump = null;
-        this.jumpCooldown = 0.8;
-        this.landT = 0.22;
-        jumpY = 0;
-        sfx.land();
-      }
-    }
-
+    // equestrian jump over rocks and bushes in the path
+    const jumpY = updateJump(this, this.world, dt, true);
     this.pos.y = this.world.heightAt(this.pos.x, this.pos.z) + jumpY;
 
     this.obj.position.copy(this.pos);
     this.obj.rotation.y = this.heading;
     this.rig.animate(dt, this.speed, this._turnRate, this.armPose, time);
-    if (this.jump) this.rig.applyJump(jumpFrac);
-    else if (this.landT > 0) {
-      // touchdown: brief suspension squash, easing back out
-      this.rig.body.position.y -= Math.sin((this.landT / 0.22) * Math.PI) * 0.06;
-    }
+    applyJumpPose(this);
   }
 }
