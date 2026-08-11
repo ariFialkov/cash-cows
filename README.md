@@ -42,7 +42,10 @@ the throw while aiming.
   long you held on.
 - **Cows flee** when you ride close. Fundamentals apply: herds bunch up and are
   easier to hit, and cows can be cornered against the fence. The range carries
-  ~146 head at a time, with distance culling + animation LOD keeping it cheap.
+  ~156 head at a time, with distance culling + animation LOD keeping it cheap.
+- **Radar minimap** (top-right): cream dots are standard cows, purple/gold/red
+  dots are mystery/offer/crash specials. Specials beyond radar range clamp to
+  the rim as direction markers — ride toward them to hunt specials.
 - **Special cows** (all the same average RTP as everything else):
   - 🟣 **Mystery cow** — glowing purple, every one is the same size; the
     multiplier (1.3×–20×) is hidden until the wrangle resolves.

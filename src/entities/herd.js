@@ -6,7 +6,7 @@ import { Cow } from './cow.js';
 import { PEN_HALF } from '../world/world.js';
 
 const TARGET_STANDARD = 130;
-const TARGET_SPECIALS = { mystery: 6, offer: 6, crash: 4 };
+const TARGET_SPECIALS = { mystery: 10, offer: 10, crash: 6 };
 
 export class Herd {
   constructor(scene, world) {

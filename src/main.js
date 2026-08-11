@@ -11,6 +11,7 @@ import { Effects } from './core/effects.js';
 import { sfx } from './core/sfx.js';
 import { Input } from './input/input.js';
 import { UI, tmpl } from './ui/ui.js';
+import { Minimap } from './ui/minimap.js';
 import {
   Wallet, LASSO_TIERS, fmt, round2, winProbForMultiplier,
   drawOutcome, drawOffer, drawCrashPoint, crashMultAt,
@@ -38,6 +39,7 @@ const herd = new Herd(scene, world);
 const lasso = new Lasso(scene);
 const effects = new Effects(scene);
 const ui = new UI(wallet);
+const minimap = new Minimap();
 const input = new Input(canvas);
 
 let state = 'menu';            // menu | transition | playing
@@ -425,6 +427,7 @@ function frame() {
   world.update(player.pos, dt);
   updateCamera(dt, time);
   updatePopupAnchor();
+  if (state !== 'menu') minimap.update(player, herd.cows);
 
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
