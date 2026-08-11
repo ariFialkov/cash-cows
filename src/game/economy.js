@@ -26,17 +26,19 @@ export const LASSO_TIERS = [
 
 export const START_BALANCE = 1000;
 
-// Standard cow size draw, biased toward smaller (frequent-win) cows.
+// Standard cow size draw: 65% are low-risk "runts" (1.15-1.5x, hold 63-79%),
+// the rest span the full spread up to the big payers.
 export function drawStandardSize() {
-  return 0.85 + 0.7 * Math.pow(Math.random(), 2);
+  if (Math.random() < 0.65) return 0.85 + Math.random() * 0.13;
+  return 0.85 + 0.7 * Math.pow(Math.random(), 1.3);
 }
 
 // Standard cow multiplier from its size scale s in [0.85, 1.55].
-// Kept low-slung so everyday cows hold often: 1.2x smalls win ~75% of the
-// time, and only the true monsters get long odds.
+// Kept low-slung so everyday cows hold often: the smallest cows pay 1.15x and
+// win ~79% of the time; only the true monsters get long odds.
 export function multiplierForSize(s) {
   const t = clamp01((s - 0.85) / (1.55 - 0.85));
-  const m = 1.2 + Math.pow(t, 1.6) * 6.3; // 1.2x (small, safe) .. 7.5x (huge, risky)
+  const m = 1.15 + Math.pow(t, 1.7) * 6.35; // 1.15x (small, safe) .. 7.5x (huge, risky)
   return round2(m);
 }
 

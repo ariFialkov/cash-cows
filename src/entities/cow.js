@@ -280,6 +280,10 @@ export class Cow {
     const FLEE_R = 20, CALM_R = 26;
     const toPlayer = this.pos.distanceTo(player.pos);
 
+    // far cows are hidden entirely (fog + camera never show them) so the big
+    // herd costs no matrix updates or draws until you ride toward it
+    this.obj.visible = toPlayer < 110 || this.state === 'lassoed';
+
     if (this.state === 'lassoed') {
       // dragged fight handled by the wrangle controller; just animate
       this.rig.animate(dt, this.kind === 'crash' ? 'stomp' : 'struggle', 0, this.struggleIntensity, time);

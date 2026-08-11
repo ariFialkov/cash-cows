@@ -34,14 +34,15 @@ the throw while aiming.
 - **Aim assist.** Throws magnetize to a cow near the landing point (the aim
   ring locks on and turns green) and the loop tracks it in flight, so fleeing
   cows are hittable without pixel-perfect swipes.
-- **Cow size = risk/reward.** Standard cows vary from 1.2× (small — holds
-  ~75% of the time) to 7.5× (huge, likely to snap the rope), with spawn sizes
-  biased small so the average catch holds ~44% of wrangles. The popup shows
-  each cow's multiplier and hold chance. Win the full multiplier, or the rope
-  snaps and you get a **wrangling-time bonus** proportional to how long you
-  held on.
+- **Cow size = risk/reward.** Standard cows vary from 1.15× (small — holds
+  ~79% of the time) to 7.5× (huge, likely to snap the rope). 65% of spawns
+  are low-risk runts, so the average catch holds ~58% of wrangles. The popup
+  shows each cow's multiplier and hold chance. Win the full multiplier, or
+  the rope snaps and you get a **wrangling-time bonus** proportional to how
+  long you held on.
 - **Cows flee** when you ride close. Fundamentals apply: herds bunch up and are
-  easier to hit, and cows can be cornered against the fence.
+  easier to hit, and cows can be cornered against the fence. The range carries
+  ~146 head at a time, with distance culling + animation LOD keeping it cheap.
 - **Special cows** (all the same average RTP as everything else):
   - 🟣 **Mystery cow** — glowing purple, every one is the same size; the
     multiplier (1.3×–20×) is hidden until the wrangle resolves.

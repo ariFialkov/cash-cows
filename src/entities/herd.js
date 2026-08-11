@@ -5,8 +5,8 @@ import * as THREE from 'three';
 import { Cow } from './cow.js';
 import { PEN_HALF } from '../world/world.js';
 
-const TARGET_STANDARD = 58;
-const TARGET_SPECIALS = { mystery: 5, offer: 5, crash: 3 };
+const TARGET_STANDARD = 130;
+const TARGET_SPECIALS = { mystery: 6, offer: 6, crash: 4 };
 
 export class Herd {
   constructor(scene, world) {
@@ -31,8 +31,8 @@ export class Herd {
   _seed() {
     let placed = 0;
     while (placed < TARGET_STANDARD) {
-      const herdSize = Math.min(3 + Math.floor(Math.random() * 5), TARGET_STANDARD - placed);
-      const [hx, hz] = this._randPoint(25, null, 0);
+      const herdSize = Math.min(4 + Math.floor(Math.random() * 5), TARGET_STANDARD - placed);
+      const [hx, hz] = this._randPoint(18, null, 0);
       for (let i = 0; i < herdSize; i++) {
         const a = Math.random() * Math.PI * 2;
         const r = 2 + Math.random() * 7;
@@ -62,7 +62,7 @@ export class Herd {
     // top up population, spawning out of sight of the player
     this._respawnT -= dt;
     if (this._respawnT <= 0) {
-      this._respawnT = 2.5;
+      this._respawnT = 1.5;
       const counts = { standard: 0, mystery: 0, offer: 0, crash: 0 };
       for (const c of this.cows) counts[c.kind]++;
       let kind = null;
