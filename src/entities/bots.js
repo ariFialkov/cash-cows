@@ -35,7 +35,7 @@ class Bot {
     this.armPose = 'spin';
 
     this.tier = LASSO_TIERS[i % LASSO_TIERS.length];
-    this.lasso = new Lasso(scene);
+    this.lasso = new Lasso(scene, world);
     this.lasso.setColor(this.tier.color);
 
     this.state = 'roam'; // roam | hunt | throwing | wrangle

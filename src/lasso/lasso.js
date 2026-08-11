@@ -16,8 +16,9 @@ const LOOP_SEGS = 40;
 const ROPE_N = 12; // verlet particles
 
 export class Lasso {
-  constructor(scene) {
+  constructor(scene, world = null) {
     this.scene = scene;
+    this.world = world; // for rope-terrain collision
     this.state = 'idle'; // idle | aiming | flying | attached | snapping
     this.color = 0xb98a5a;
 
@@ -153,6 +154,7 @@ export class Lasso {
   releaseToIdle() {
     this.state = 'idle';
     this.attachedCow = null;
+    this._ropeSeeded = false; // snap cleanly back to the overhead coil
   }
 
   // --- loop construction ----------------------------------------------------
@@ -229,12 +231,15 @@ export class Lasso {
         r: R * (1 + 0.05 * Math.sin(2 * th + sa * 2) + 0.07 * flut * Math.sin(3 * th - time * 18) + 0.04 * flut * Math.sin(5 * th + time * 23)),
         lift: R * (-0.14 * flut * Math.cos(th - phiV) + 0.05 * flut * Math.sin(2 * th - time * 16)),
       }), this._planeAngleTo(hand, p));
-      this._ropeSim(dt, hand, this._hondaPt, { slack: 1.12, gravity: -9 });
+      this._ropeSim(dt, hand, this._hondaPt, { slack: 1.06, gravity: -9 });
       if (t >= 1) {
         const cb = this.onLand;
         this.onLand = null;
         this.homing = null;
         this.state = 'idle';
+        // reseed for whatever comes next (re-attach or recall to the spin) so
+        // the solver never has to violently reel in a fully stretched rope
+        this._ropeSeeded = false;
         if (cb) cb(this.flyTo.clone());
       }
       return;
@@ -253,10 +258,10 @@ export class Lasso {
         r: R * (1 + 0.05 * jig * Math.sin(3 * th + time * 9) + 0.035 * jig * Math.sin(5 * th - time * 12) + 0.02 * Math.sin(time * 11)),
         lift: R * 0.08 * jig * Math.sin(2 * th + time * 8),
       }), this._planeAngleTo(hand, neck));
-      // rope tautens as the struggle intensifies
+      // working rope: modest slack that tautens as the struggle intensifies
       this._ropeSim(dt, hand, this._hondaPt, {
-        slack: 1.22 - 0.15 * Math.min(1, cow.struggleIntensity),
-        gravity: -12,
+        slack: 1.09 - 0.06 * Math.min(1, cow.struggleIntensity),
+        gravity: -10,
       });
       return;
     }
@@ -265,7 +270,7 @@ export class Lasso {
       this.snapT += dt;
       const k = Math.min(1, this.snapT / 0.55);
       // the freed rope whips back on its own; the crumpling loop rides its tail
-      this._ropeSim(dt, hand, hand, { pinEnd: false, gravity: -11, damping: 0.965 });
+      this._ropeSim(dt, hand, hand, { pinEnd: false, gravity: -11, damping: 0.94 });
       const center = this.loopCenter.copy(this.ropeP[ROPE_N - 1]);
       this._basis(this._v3.set(Math.sin(time * 6) * 0.4, 1, Math.cos(time * 5) * 0.4));
       const R = Math.max(0.18, this.loopRadius * (1 - k * 0.6));
@@ -297,7 +302,7 @@ export class Lasso {
       r: R * (1 + 0.09 * Math.sin(2 * th - sa * 2) + 0.05 * Math.sin(3 * th - time * 9 * spinRate) + 0.03 * Math.sin(5 * th + time * 13)),
       lift: R * (0.07 * Math.sin(2 * th - sa * 2 + 1.2) + 0.04 * Math.sin(3 * th + time * 8)),
     }), this._planeAngleTo(hand, center));
-    this._ropeSim(dt, hand, this._hondaPt, { slack: 1.05, gravity: -8 });
+    this._ropeSim(dt, hand, this._hondaPt, { slack: 1.03, gravity: -8 });
 
     if (aiming) {
       const pts = [];
@@ -372,8 +377,14 @@ export class Lasso {
           p2.x -= dx * k2; p2.y -= dy * k2; p2.z -= dz * k2;
         }
       }
-      // keep the free tail above ground while it whips
-      if (!pinEnd) {
+      // rope-terrain collision: no particle may sink below the ground
+      if (this.world) {
+        for (let i = 1; i < ROPE_N; i++) {
+          const p = P[i];
+          const gy = this.world.heightAt(p.x, p.z) + 0.04;
+          if (p.y < gy) p.y = gy;
+        }
+      } else if (!pinEnd) {
         for (let i = 1; i < ROPE_N; i++) if (P[i].y < a.y - 1.6) P[i].y = a.y - 1.6;
       }
     }
