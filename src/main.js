@@ -488,7 +488,7 @@ window.addEventListener('resize', () => {
 });
 
 // debug/testing handle
-window.__cc = { player, herd, wallet, hook, lasso, input, bots, getState: () => state, getWrangle: () => wrangle };
+window.__cc = { player, herd, wallet, hook, lasso, input, bots, world, getState: () => state, getWrangle: () => wrangle };
 
 // PWA
 if ('serviceWorker' in navigator && import.meta.env.PROD) {

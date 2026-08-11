@@ -205,6 +205,9 @@ export class World {
     });
     trunks.castShadow = fols.castShadow = true;
 
+    // rocks and bushes double as jumpable obstacles — record footprint + height
+    this.obstacles = [];
+
     // --- rocks
     const rockPts = this._scatter(110, 16);
     const rockGeo = new THREE.IcosahedronGeometry(0.6, 0);
@@ -215,6 +218,7 @@ export class World {
       q.setFromAxisAngle(YAXIS, this.rand() * Math.PI * 2);
       m.compose(v.set(x, this.heightAt(x, z) + 0.1 * s, z), q, new THREE.Vector3(s, s * (0.6 + this.rand() * 0.5), s));
       rocks.setMatrixAt(i, m);
+      this.obstacles.push({ x, z, r: 0.62 * s, h: 0.55 * s });
     });
     rocks.castShadow = true;
 
@@ -230,6 +234,7 @@ export class World {
       q.setFromAxisAngle(YAXIS, this.rand() * Math.PI * 2);
       m.compose(v.set(x, this.heightAt(x, z), z), q, new THREE.Vector3(s, s, s));
       bushes.setMatrixAt(i, m);
+      this.obstacles.push({ x, z, r: 0.58 * s, h: 0.55 * s });
     });
 
     this.scene.add(trunks, fols, rocks, bushes);

@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { PEN_HALF } from '../world/world.js';
 import { loft, loftUp, loftDown } from '../core/loft.js';
+import { sfx } from '../core/sfx.js';
 
 export const HORSE_COATS = [
   { body: 0x8a5a2b, mane: 0x3d2812, sock: 0xe8e2d4, blaze: true, stripe: true, name: 'Chestnut' },
@@ -396,6 +397,50 @@ export class HorseRider {
     }
   }
 
+  // Equestrian jump pose, blended over the gait so takeoff and landing don't
+  // pop. f = arc phase 0..1 (0 takeoff, 1 touchdown).
+  applyJump(f) {
+    const w = Math.min(1, 4 * f * (1 - f) * 1.8); // 0 at ends, 1 mid-air
+    const mix = (o, prop, target) => { o.rotation[prop] += (target - o.rotation[prop]) * w; };
+
+    // nose up over the fence, level out, nose down into the landing
+    mix(this.body, 'x', -0.3 * Math.cos(f * Math.PI));
+
+    // front legs tuck, then reach forward for the ground
+    for (let i = 0; i < 2; i++) {
+      const leg = this.legs[i];
+      if (f < 0.55) {
+        mix(leg.hip, 'x', 0.95);
+        mix(leg.knee, 'x', -1.6);
+        mix(leg.fetlock, 'x', 0.85);
+      } else {
+        const e = (f - 0.55) / 0.45;
+        mix(leg.hip, 'x', 0.95 - e * 1.45);
+        mix(leg.knee, 'x', -1.6 + e * 1.35);
+        mix(leg.fetlock, 'x', 0.85 - e * 0.95);
+      }
+    }
+    // hind legs drive off extended, then trail behind
+    for (let i = 2; i < 4; i++) {
+      const leg = this.legs[i];
+      if (f < 0.4) {
+        mix(leg.hip, 'x', -0.95);
+        mix(leg.knee, 'x', -0.15);
+      } else {
+        const e = (f - 0.4) / 0.6;
+        mix(leg.hip, 'x', -0.95 + e * 1.15);
+        mix(leg.knee, 'x', -0.15 - e * 0.75);
+      }
+    }
+    // neck stretches over the jump, tail streams
+    mix(this.neck, 'x', 0.95);
+    mix(this.head, 'x', -0.18);
+    mix(this.tail[0], 'x', 0.9);
+    // rider rises into two-point, leaning up the neck
+    mix(this.torso, 'x', 0.55);
+    this.rider.position.y = 0.42 + Math.sin(f * Math.PI) * 0.035 * w;
+  }
+
   handWorldPos(out) {
     return this.handR.getWorldPosition(out);
   }
@@ -418,6 +463,9 @@ export class Player {
     this.maxSpeed = 12.5;
     this.armPose = 'rest';
     this._turnRate = 0;
+    this.jump = null;            // { t, T, h } while airborne
+    this.jumpCooldown = 0;
+    this.landT = 0;
   }
 
   // moveDir: normalized world-space desired direction (or zero), 0..1 strength
@@ -449,10 +497,48 @@ export class Player {
     const B = PEN_HALF - 1.2;
     this.pos.x = THREE.MathUtils.clamp(this.pos.x, -B, B);
     this.pos.z = THREE.MathUtils.clamp(this.pos.z, -B, B);
-    this.pos.y = this.world.heightAt(this.pos.x, this.pos.z);
+
+    // --- equestrian jump over rocks and bushes in the path ---
+    this.jumpCooldown -= dt;
+    if (this.landT > 0) this.landT -= dt;
+    if (!this.jump && this.jumpCooldown <= 0 && this.speed > 4.5 && this.world.obstacles) {
+      const fx = Math.sin(this.heading), fz = Math.cos(this.heading);
+      const look = 1.2 + this.speed * 0.28;
+      for (const o of this.world.obstacles) {
+        const dx = o.x - this.pos.x, dz = o.z - this.pos.z;
+        if (dx * dx + dz * dz > look * look) continue;
+        const along = dx * fx + dz * fz;            // distance ahead
+        if (along < 0.4) continue;                   // behind or beside
+        if (Math.abs(dx * fz - dz * fx) > o.r + 0.4) continue; // off the line
+        const T = (along + o.r + 1.7) / Math.max(this.speed, 5.5);
+        this.jump = { t: 0, T: Math.min(T, 0.95), h: Math.min(1.15, 0.55 + o.h * 0.55) };
+        sfx.jump();
+        break;
+      }
+    }
+    let jumpY = 0, jumpFrac = 0;
+    if (this.jump) {
+      this.jump.t += dt;
+      jumpFrac = Math.min(1, this.jump.t / this.jump.T);
+      jumpY = Math.sin(jumpFrac * Math.PI) * this.jump.h;
+      if (jumpFrac >= 1) {
+        this.jump = null;
+        this.jumpCooldown = 0.8;
+        this.landT = 0.22;
+        jumpY = 0;
+        sfx.land();
+      }
+    }
+
+    this.pos.y = this.world.heightAt(this.pos.x, this.pos.z) + jumpY;
 
     this.obj.position.copy(this.pos);
     this.obj.rotation.y = this.heading;
     this.rig.animate(dt, this.speed, this._turnRate, this.armPose, time);
+    if (this.jump) this.rig.applyJump(jumpFrac);
+    else if (this.landT > 0) {
+      // touchdown: brief suspension squash, easing back out
+      this.rig.body.position.y -= Math.sin((this.landT / 0.22) * Math.PI) * 0.06;
+    }
   }
 }

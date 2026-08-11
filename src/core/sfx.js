@@ -59,4 +59,6 @@ export const sfx = {
   tick() { tone(880, 0.04, 'square', 0.045); },
   crash() { noise(0.5, 0.5, 0, 700); tone(70, 0.6, 'sawtooth', 0.3, 0, 30); },
   moo() { tone(180, 0.5, 'sawtooth', 0.1, 0, 120); tone(90, 0.5, 'triangle', 0.12, 0.05, 70); },
+  jump() { noise(0.18, 0.1, 0, 1800); tone(230, 0.24, 'sine', 0.06, 0, 430); },
+  land() { noise(0.1, 0.18, 0, 500); tone(85, 0.18, 'sine', 0.16, 0, 55); },
 };
