@@ -5,6 +5,7 @@
 
 import * as THREE from 'three';
 import { PEN_HALF } from '../world/world.js';
+import { loft, loftUp, loftDown } from '../core/loft.js';
 
 export const HORSE_COATS = [
   { body: 0x8a5a2b, mane: 0x3d2812, name: 'Chestnut' },
@@ -40,18 +41,33 @@ function pivot(parent, x, y, z) {
 
 function buildLeg(parent, x, y, z, mats, front) {
   const hip = pivot(parent, x, y, z);
-  add(hip, new THREE.SphereGeometry(0.13, 10, 8), mats.body, 0, 0, 0);
+  // haunch / shoulder muscle blending the leg into the barrel
+  const muscle = add(hip, new THREE.SphereGeometry(0.14, 12, 10), mats.body, 0, 0.05, front ? 0.01 : -0.02);
+  muscle.scale.set(0.85, 1.5, front ? 1.0 : 1.25);
   const upperLen = 0.42;
-  add(hip, new THREE.CylinderGeometry(0.085, 0.065, upperLen, 8), mats.body, 0, -upperLen / 2, 0);
+  add(hip, loftDown([
+    { z: 0, rx: 0.1, ry: 0.13 },
+    { z: 0.14, rx: 0.08, ry: 0.095 },
+    { z: 0.3, rx: 0.058, ry: 0.062 },
+    { z: upperLen, rx: 0.052, ry: 0.054 },
+  ]), mats.body);
 
   const knee = pivot(hip, 0, -upperLen, 0);
   const lowerLen = 0.38;
-  add(knee, new THREE.CylinderGeometry(0.06, 0.045, lowerLen, 8), mats.body, 0, -lowerLen / 2, 0);
+  add(knee, loftDown([
+    { z: 0, rx: 0.055, ry: 0.06 },
+    { z: 0.16, rx: 0.045, ry: 0.048 },
+    { z: lowerLen, rx: 0.04, ry: 0.042 },
+  ]), mats.body);
 
   const fetlock = pivot(knee, 0, -lowerLen, 0);
   const cannonLen = 0.22;
-  add(fetlock, new THREE.CylinderGeometry(0.045, 0.05, cannonLen, 8), mats.sock, 0, -cannonLen / 2, 0);
-  const hoofG = new THREE.CylinderGeometry(0.062, 0.07, 0.09, 8);
+  add(fetlock, loftDown([
+    { z: 0, rx: 0.045, ry: 0.048 },
+    { z: 0.12, rx: 0.04, ry: 0.042 },
+    { z: cannonLen, rx: 0.048, ry: 0.05 },
+  ]), mats.sock);
+  const hoofG = new THREE.CylinderGeometry(0.062, 0.072, 0.09, 12);
   add(fetlock, hoofG, mats.hoof, 0, -cannonLen - 0.04, 0.012);
 
   return { hip, knee, fetlock, front };
@@ -97,40 +113,69 @@ export class HorseRider {
     // ------- horse body (root sits at ground level) -------
     this.body = pivot(this.group, 0, 1.06, 0);
 
-    const barrel = new THREE.CapsuleGeometry(0.34, 0.85, 6, 12);
-    barrel.rotateX(Math.PI / 2);
-    add(this.body, barrel, M.body, 0, 0, 0);
-    add(this.body, new THREE.SphereGeometry(0.36, 12, 10), M.body, 0, 0.02, 0.5).scale.set(0.96, 1, 1.1); // chest
-    add(this.body, new THREE.SphereGeometry(0.37, 12, 10), M.body, 0, 0.03, -0.48).scale.set(1, 1.02, 1.15); // rump
+    // sculpted barrel: croup -> hindquarters -> flank -> belly -> girth ->
+    // withers -> chest, with a real topline and belly curve
+    add(this.body, loft([
+      { z: -0.80, rx: 0.05, ryT: 0.06, ryB: 0.05, y: 0.13 },
+      { z: -0.72, rx: 0.16, ryT: 0.18, ryB: 0.15, y: 0.08 },
+      { z: -0.58, rx: 0.29, ryT: 0.31, ryB: 0.27, y: 0.02 },
+      { z: -0.42, rx: 0.33, ryT: 0.34, ryB: 0.31, y: 0 },
+      { z: -0.20, rx: 0.30, ryT: 0.31, ryB: 0.34, y: -0.015 },
+      { z: 0.02, rx: 0.31, ryT: 0.30, ryB: 0.37, y: -0.02 },
+      { z: 0.24, rx: 0.32, ryT: 0.32, ryB: 0.36, y: -0.01 },
+      { z: 0.42, rx: 0.29, ryT: 0.37, ryB: 0.31, y: 0.005 },
+      { z: 0.58, rx: 0.24, ryT: 0.32, ryB: 0.24, y: 0.03 },
+      { z: 0.72, rx: 0.13, ryT: 0.18, ryB: 0.13, y: 0.05 },
+      { z: 0.79, rx: 0.04, ryT: 0.05, ryB: 0.04, y: 0.07 },
+    ], 18), M.body);
 
     // ------- neck & head -------
     this.neck = pivot(this.body, 0, 0.22, 0.62);
     this.neck.rotation.x = -0.85;
-    const neckGeo = new THREE.CapsuleGeometry(0.15, 0.42, 6, 10);
-    add(this.neck, neckGeo, M.body, 0, 0.28, 0).scale.set(0.8, 1, 1.25);
-    // mane along neck
-    for (let i = 0; i < 5; i++) {
-      add(this.neck, new THREE.BoxGeometry(0.06, 0.14, 0.1), M.mane, 0, 0.1 + i * 0.11, -0.13 - i * 0.015);
+    // tapering neck with a crest, wide where it melts into the shoulders
+    add(this.neck, loftUp([
+      { z: -0.06, rx: 0.20, ryT: 0.27, ryB: 0.24 },
+      { z: 0.14, rx: 0.16, ryT: 0.23, ryB: 0.19 },
+      { z: 0.32, rx: 0.125, ryT: 0.19, ryB: 0.15 },
+      { z: 0.48, rx: 0.105, ryT: 0.155, ryB: 0.125 },
+      { z: 0.62, rx: 0.09, ryT: 0.12, ryB: 0.10 },
+    ], 14), M.body);
+    // mane: soft overlapping tufts hugging the crest
+    for (let i = 0; i < 6; i++) {
+      const t = i / 5;
+      const tuft = add(this.neck, new THREE.SphereGeometry(0.062, 8, 6), M.mane,
+        0, 0.05 + i * 0.105, -(0.235 - t * 0.09));
+      tuft.scale.set(0.5, 1.05, 1.0);
+      tuft.rotation.x = -0.3;
     }
 
     this.head = pivot(this.neck, 0, 0.58, 0.05);
     this.head.rotation.x = 1.25;
-    const skull = add(this.head, new THREE.BoxGeometry(0.2, 0.22, 0.3), M.body, 0, 0.02, 0.1);
-    skull.geometry.translate(0, 0, 0);
-    add(this.head, new THREE.BoxGeometry(0.13, 0.15, 0.26), M.body, 0, -0.03, 0.32); // muzzle
-    add(this.head, new THREE.BoxGeometry(0.135, 0.06, 0.1), M.mane, 0, 0.09, 0.02); // forelock
+    // sculpted head: broad cheeks and brow tapering to a soft square muzzle
+    add(this.head, loft([
+      { z: -0.14, rx: 0.04, ry: 0.045, y: 0.02 },
+      { z: -0.08, rx: 0.108, ryT: 0.12, ryB: 0.13, y: 0.015 },
+      { z: 0.04, rx: 0.118, ryT: 0.12, ryB: 0.14, y: 0.01 },
+      { z: 0.15, rx: 0.10, ryT: 0.105, ryB: 0.115, y: 0 },
+      { z: 0.26, rx: 0.082, ryT: 0.09, ryB: 0.093, y: -0.01 },
+      { z: 0.37, rx: 0.07, ryT: 0.075, ryB: 0.078, y: -0.022 },
+      { z: 0.46, rx: 0.062, ryT: 0.06, ryB: 0.068, y: -0.03 },
+      { z: 0.51, rx: 0.028, ry: 0.03, y: -0.034 },
+    ], 14), M.body);
+    const forelock = add(this.head, new THREE.SphereGeometry(0.07, 8, 6), M.mane, 0, 0.09, 0.0); // forelock
+    forelock.scale.set(0.9, 0.5, 1.3);
     // eyes
-    const eyeG = new THREE.SphereGeometry(0.03, 8, 6);
-    add(this.head, eyeG, M.hoof, 0.1, 0.05, 0.16);
-    add(this.head, eyeG, M.hoof, -0.1, 0.05, 0.16);
+    const eyeG = new THREE.SphereGeometry(0.028, 8, 6);
+    add(this.head, eyeG, M.hoof, 0.096, 0.06, 0.15);
+    add(this.head, eyeG, M.hoof, -0.096, 0.06, 0.15);
     // ears
-    const earGeo = new THREE.ConeGeometry(0.045, 0.14, 6);
-    this.earL = pivot(this.head, 0.08, 0.14, -0.02);
-    this.earR = pivot(this.head, -0.08, 0.14, -0.02);
+    const earGeo = new THREE.ConeGeometry(0.05, 0.16, 7);
+    this.earL = pivot(this.head, 0.08, 0.15, -0.03);
+    this.earR = pivot(this.head, -0.08, 0.15, -0.03);
     add(this.earL, earGeo, M.body, 0, 0.06, 0);
     add(this.earR, earGeo, M.body, 0, 0.06, 0);
     // bridle
-    add(this.head, new THREE.TorusGeometry(0.13, 0.015, 6, 14), M.tack, 0, -0.02, 0.28).rotation.z = Math.PI / 2;
+    add(this.head, new THREE.TorusGeometry(0.088, 0.013, 6, 16), M.tack, 0, -0.025, 0.34).rotation.z = Math.PI / 2;
 
     // ------- tail: 3 chained segments -------
     this.tail = [];

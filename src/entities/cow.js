@@ -7,6 +7,7 @@
 
 import * as THREE from 'three';
 import { PEN_HALF } from '../world/world.js';
+import { loft, loftUp, loftDown } from '../core/loft.js';
 import { multiplierForSize, drawMysteryMultiplier, drawStandardSize } from '../game/economy.js';
 
 const texCache = new Map();
@@ -91,11 +92,20 @@ function cowMaterials(kind) {
 function buildCowLeg(parent, x, y, z, M) {
   const hip = pivot(parent, x, y, z);
   const upper = 0.34;
-  add(hip, new THREE.CylinderGeometry(0.09, 0.07, upper, 8), M.body, 0, -upper / 2, 0);
+  add(hip, loftDown([
+    { z: -0.04, rx: 0.105, ry: 0.13 },
+    { z: 0.12, rx: 0.082, ry: 0.09 },
+    { z: 0.24, rx: 0.062, ry: 0.066 },
+    { z: upper, rx: 0.056, ry: 0.058 },
+  ]), M.body);
   const knee = pivot(hip, 0, -upper, 0);
   const lower = 0.3;
-  add(knee, new THREE.CylinderGeometry(0.06, 0.055, lower, 8), M.accent, 0, -lower / 2, 0);
-  add(knee, new THREE.CylinderGeometry(0.065, 0.075, 0.08, 8), mat(0x2b2119, 0.6), 0, -lower - 0.03, 0.008);
+  add(knee, loftDown([
+    { z: 0, rx: 0.058, ry: 0.062 },
+    { z: 0.14, rx: 0.048, ry: 0.05 },
+    { z: lower, rx: 0.05, ry: 0.052 },
+  ]), M.accent);
+  add(knee, new THREE.CylinderGeometry(0.065, 0.078, 0.08, 12), mat(0x2b2119, 0.6), 0, -lower - 0.03, 0.008);
   return { hip, knee };
 }
 
@@ -108,26 +118,55 @@ export class CowRig {
     const bull = kind === 'crash';
 
     this.body = pivot(this.group, 0, 0.88, 0);
-    const barrel = new THREE.CapsuleGeometry(bull ? 0.42 : 0.37, bull ? 0.8 : 0.7, 6, 12);
-    barrel.rotateX(Math.PI / 2);
-    add(this.body, barrel, M.body).scale.set(1, 0.96, 1);
-    add(this.body, new THREE.SphereGeometry(bull ? 0.44 : 0.38, 12, 10), M.body, 0, 0.03, -0.4).scale.set(1, 1, 1.1);
-    if (bull) add(this.body, new THREE.SphereGeometry(0.4, 12, 10), M.body, 0, 0.2, 0.32); // shoulder hump
+    // sculpted torso: pin bones -> hooks (widest) -> deep belly sag -> ribs ->
+    // shoulder -> brisket. The bull trades the sag for a chest and neck hump.
+    const K = bull ? 1.12 : 1; // bulk factor
+    add(this.body, loft([
+      { z: -0.76, rx: 0.06, ryT: 0.07, ryB: 0.06, y: 0.13 },
+      { z: -0.68, rx: 0.20 * K, ryT: 0.22, ryB: 0.18, y: 0.05 },
+      { z: -0.52, rx: 0.34 * K, ryT: 0.34, ryB: 0.30, y: 0 },
+      { z: -0.26, rx: 0.33 * K, ryT: 0.32, ryB: bull ? 0.36 : 0.39, y: -0.03 },
+      { z: 0.0, rx: 0.34 * K, ryT: 0.31, ryB: bull ? 0.37 : 0.42, y: bull ? -0.03 : -0.05 },
+      { z: 0.26, rx: 0.33 * K, ryT: bull ? 0.36 : 0.32, ryB: bull ? 0.36 : 0.38, y: -0.02 },
+      { z: 0.46, rx: 0.30 * K, ryT: bull ? 0.44 : 0.33, ryB: 0.32, y: 0.01 },
+      { z: 0.62, rx: 0.24 * K, ryT: bull ? 0.34 : 0.26, ryB: 0.26, y: 0.02 },
+      { z: 0.73, rx: 0.12 * K, ryT: 0.16, ryB: 0.15, y: 0.03 },
+      { z: 0.79, rx: 0.04, ryT: 0.05, ryB: 0.05, y: 0.04 },
+    ], 18), M.body);
 
     // neck / head / jaw
     this.neck = pivot(this.body, 0, 0.12, bull ? 0.58 : 0.52);
     this.neck.rotation.x = -0.5;
-    add(this.neck, new THREE.CapsuleGeometry(0.17, 0.2, 6, 10), M.body, 0, 0.16, 0).scale.set(0.9, 1, 1.15);
+    // short heavy neck with a dewlap line underneath
+    add(this.neck, loftUp([
+      { z: -0.05, rx: bull ? 0.24 : 0.20, ryT: 0.26, ryB: bull ? 0.30 : 0.27 },
+      { z: 0.14, rx: bull ? 0.19 : 0.16, ryT: 0.21, ryB: 0.22 },
+      { z: 0.28, rx: bull ? 0.155 : 0.13, ryT: 0.17, ryB: 0.17 },
+      { z: 0.40, rx: 0.115, ryT: 0.14, ryB: 0.13 },
+    ], 14), M.body);
     this.head = pivot(this.neck, 0, 0.38, 0.02);
     this.head.rotation.x = 0.95;
-    add(this.head, new THREE.BoxGeometry(0.26, 0.24, 0.3), M.body, 0, 0, 0.08);
-    add(this.head, new THREE.BoxGeometry(0.18, 0.16, 0.18), M.accent, 0, -0.05, 0.3); // muzzle
+    // broad brow and cheeks flowing into a wide square muzzle
+    add(this.head, loft([
+      { z: -0.12, rx: 0.04, ry: 0.045, y: 0.02 },
+      { z: -0.07, rx: 0.125, ryT: 0.115, ryB: 0.13, y: 0.01 },
+      { z: 0.05, rx: 0.135, ryT: 0.115, ryB: 0.145, y: 0 },
+      { z: 0.16, rx: 0.11, ryT: 0.095, ryB: 0.115, y: -0.01 },
+      { z: 0.26, rx: 0.095, ryT: 0.082, ryB: 0.095, y: -0.02 },
+      { z: 0.35, rx: 0.088, ryT: 0.072, ryB: 0.088, y: -0.032 },
+      { z: 0.43, rx: 0.082, ryT: 0.058, ryB: 0.078, y: -0.04 },
+      { z: 0.47, rx: 0.035, ry: 0.035, y: -0.045 },
+    ], 14), M.body);
+    // fleshy nose band in the accent colour
+    const nose = add(this.head, new THREE.SphereGeometry(0.085, 12, 8), M.accent, 0, -0.035, 0.41);
+    nose.scale.set(1.05, 0.72, 0.6);
     this.jaw = pivot(this.head, 0, -0.12, 0.2);
-    add(this.jaw, new THREE.BoxGeometry(0.15, 0.05, 0.16), M.accent, 0, 0, 0.08);
+    const jawMesh = add(this.jaw, new THREE.SphereGeometry(0.075, 10, 8), M.accent, 0, 0, 0.1);
+    jawMesh.scale.set(0.95, 0.5, 1.5);
     // eyes
     const eyeMat = M.eye || mat(0x1a1512, 0.4);
-    add(this.head, new THREE.SphereGeometry(bull ? 0.045 : 0.035, 8, 6), eyeMat, 0.12, 0.06, 0.14);
-    add(this.head, new THREE.SphereGeometry(bull ? 0.045 : 0.035, 8, 6), eyeMat, -0.12, 0.06, 0.14);
+    add(this.head, new THREE.SphereGeometry(bull ? 0.042 : 0.033, 8, 6), eyeMat, 0.105, 0.055, 0.13);
+    add(this.head, new THREE.SphereGeometry(bull ? 0.042 : 0.033, 8, 6), eyeMat, -0.105, 0.055, 0.13);
     // ears
     this.earL = pivot(this.head, 0.15, 0.08, -0.02);
     this.earR = pivot(this.head, -0.15, 0.08, -0.02);
@@ -159,8 +198,14 @@ export class CowRig {
     }
     add(tp, new THREE.SphereGeometry(0.05, 6, 6), mat(0x2e2520, 0.9), 0, -0.03, 0).scale.set(1, 1.6, 1);
 
-    // udder (not on the bull)
-    if (!bull) add(this.body, new THREE.SphereGeometry(0.16, 10, 8), mat(0xe8b7a8, 0.8), 0, -0.3, -0.22).scale.set(1, 0.75, 1);
+    // udder + teats (not on the bull)
+    if (!bull) {
+      const udderMat = mat(0xe8b7a8, 0.8);
+      add(this.body, new THREE.SphereGeometry(0.17, 14, 10), udderMat, 0, -0.36, -0.28).scale.set(0.95, 0.72, 1.1);
+      for (const [tx, tz] of [[0.07, -0.2], [-0.07, -0.2], [0.07, -0.34], [-0.07, -0.34]]) {
+        add(this.body, new THREE.CapsuleGeometry(0.018, 0.05, 3, 6), udderMat, tx, -0.49, tz);
+      }
+    }
 
     // legs
     this.legs = [
