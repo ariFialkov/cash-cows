@@ -56,8 +56,8 @@ export class Herd {
     if (i >= 0) this.cows.splice(i, 1);
   }
 
-  update(dt, player, time) {
-    for (const c of this.cows) c.update(dt, player, this.cows, time);
+  update(dt, player, time, riders = []) {
+    for (const c of this.cows) c.update(dt, player, this.cows, time, riders);
 
     // top up population, spawning out of sight of the player
     this._respawnT -= dt;

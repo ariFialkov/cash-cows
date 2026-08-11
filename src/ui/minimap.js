@@ -30,7 +30,7 @@ export class Minimap {
     this._sizeDirty = false;
   }
 
-  update(player, cows) {
+  update(player, cows, bots = []) {
     if (this._sizeDirty) this._resize();
     const ctx = this.ctx;
     const S = this.css;
@@ -84,6 +84,21 @@ export class Minimap {
         ctx.fill();
         ctx.globalAlpha = 1;
       }
+    }
+
+    // rival cowboys: pale blue dots, clamped to the rim when far
+    for (const b of bots) {
+      const dx = b.pos.x - player.pos.x;
+      const dz = b.pos.z - player.pos.z;
+      const d = Math.hypot(dx, dz);
+      const k = d <= RANGE ? scale : (rim - 5) / d;
+      ctx.fillStyle = '#9fdcff';
+      ctx.strokeStyle = 'rgba(20,40,60,0.8)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(C + dx * k, C + dz * k, 2.8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
     }
 
     // player arrow (heading 0 = +z = map-down)

@@ -313,6 +313,7 @@ export class Cow {
     this.state = 'graze';
     this.stateT = Math.random() * 4;
     this.captured = false;
+    this.claimedBy = null;
     this.struggleIntensity = 0;
     // bigger cows are a touch slower — herd basics still apply
     this.runSpeed = (kind === 'crash' ? 7.6 : 8.6) - (this.size - 1) * 1.6;
@@ -322,9 +323,16 @@ export class Cow {
     scene.remove(this.obj);
   }
 
-  update(dt, player, cows, time) {
+  update(dt, player, cows, time, riders = []) {
     const FLEE_R = 20, CALM_R = 26;
     const toPlayer = this.pos.distanceTo(player.pos);
+
+    // flee from whichever rider (player or bot) is closest
+    let threat = player.pos, threatD = toPlayer;
+    for (const r of riders) {
+      const d = this.pos.distanceTo(r.pos);
+      if (d < threatD) { threatD = d; threat = r.pos; }
+    }
 
     // far cows are hidden entirely (fog + camera never show them) so the big
     // herd costs no matrix updates or draws until you ride toward it
@@ -339,8 +347,8 @@ export class Cow {
 
     this.stateT -= dt;
     if (this.state === 'flee') {
-      if (toPlayer > CALM_R) { this.state = 'graze'; this.stateT = 1 + Math.random() * 3; }
-    } else if (toPlayer < FLEE_R) {
+      if (threatD > CALM_R) { this.state = 'graze'; this.stateT = 1 + Math.random() * 3; }
+    } else if (threatD < FLEE_R) {
       this.state = 'flee';
     } else if (this.stateT <= 0) {
       this.state = this.state === 'graze' ? 'wander' : 'graze';
@@ -352,8 +360,8 @@ export class Cow {
     let targetHeading = this.heading;
 
     if (this.state === 'flee') {
-      // flee player + light boids (cohesion toward herd, separation)
-      const away = new THREE.Vector3().subVectors(this.pos, player.pos).normalize();
+      // flee the nearest rider + light boids (cohesion toward herd, separation)
+      const away = new THREE.Vector3().subVectors(this.pos, threat).normalize();
       const herd = new THREE.Vector3();
       const sep = new THREE.Vector3();
       let n = 0;
@@ -383,7 +391,7 @@ export class Cow {
       if (dir.lengthSq() > 1e-5) targetHeading = Math.atan2(dir.x, dir.z);
       // cornered: both axes pinned and rider close → panic but crawl
       const cornered = Math.abs(this.pos.x) > M && Math.abs(this.pos.z) > M;
-      const urgency = THREE.MathUtils.clamp(1 - (toPlayer - 4) / (FLEE_R - 4), 0.35, 1);
+      const urgency = THREE.MathUtils.clamp(1 - (threatD - 4) / (FLEE_R - 4), 0.35, 1);
       targetSpeed = this.runSpeed * urgency * (cornered ? 0.35 : 1);
     } else if (this.state === 'wander') {
       targetHeading = this.wanderDir;

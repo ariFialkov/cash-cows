@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { World, PEN_HALF } from './world/world.js';
 import { Player } from './entities/horse.js';
 import { Herd } from './entities/herd.js';
+import { Bots } from './entities/bots.js';
 import { Lasso } from './lasso/lasso.js';
 import { Effects } from './core/effects.js';
 import { sfx } from './core/sfx.js';
@@ -41,6 +42,45 @@ const effects = new Effects(scene);
 const ui = new UI(wallet);
 const minimap = new Minimap();
 const input = new Input(canvas);
+
+// ---- floating win labels over bot cowboys ----
+const floaters = [];
+function spawnFloater(worldPos, text, big) {
+  const el = document.createElement('div');
+  el.className = 'floater' + (big ? ' big' : '');
+  el.textContent = text;
+  document.getElementById('hud').appendChild(el);
+  floaters.push({ el, pos: worldPos.clone().add(new THREE.Vector3(0, 2.3, 0)), age: 0 });
+}
+
+function updateFloaters(dt) {
+  for (let i = floaters.length - 1; i >= 0; i--) {
+    const f = floaters[i];
+    f.age += dt;
+    f.pos.y += dt * 0.7;
+    if (f.age > 2.4) { f.el.remove(); floaters.splice(i, 1); continue; }
+    _proj.copy(f.pos).project(camera);
+    const visible = _proj.z < 1;
+    f.el.style.display = visible ? '' : 'none';
+    if (visible) {
+      f.el.style.left = `${(_proj.x * 0.5 + 0.5) * window.innerWidth}px`;
+      f.el.style.top = `${(-_proj.y * 0.5 + 0.5) * window.innerHeight}px`;
+      f.el.style.opacity = f.age > 1.6 ? String(1 - (f.age - 1.6) / 0.8) : '1';
+    }
+  }
+}
+
+// simulated multiplayer: rival cowboys working the same range
+const bots = new Bots(scene, world, (bot, win, mult) => {
+  const big = mult >= 4;
+  ui.toast(
+    big ? `&#127808; ${bot.name} hit ${mult}&times; &mdash; lucky herd!`
+        : `&#129312; ${bot.name} wrangled +${fmt(win)}`,
+    'gold'
+  );
+  spawnFloater(bot.pos, `+${fmt(win)}`, big);
+  if (big) sfx.coin();
+});
 
 let state = 'menu';            // menu | transition | playing
 let wrangle = null;            // active bet flow
@@ -420,14 +460,16 @@ function frame() {
     : 'spin';
 
   player.update(dt, moveDir, wrangle ? Math.min(strength, 0.6) : strength, time);
-  herd.update(dt, player, time);
+  herd.update(dt, player, time, bots.list);
+  bots.update(dt, player, herd, effects, time);
   updateWrangle(dt, time);
   lasso.update(dt, player, time);
   effects.update(dt);
   world.update(player.pos, dt);
   updateCamera(dt, time);
   updatePopupAnchor();
-  if (state !== 'menu') minimap.update(player, herd.cows);
+  updateFloaters(dt);
+  if (state !== 'menu') minimap.update(player, herd.cows, bots.list);
 
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
@@ -441,7 +483,7 @@ window.addEventListener('resize', () => {
 });
 
 // debug/testing handle
-window.__cc = { player, herd, wallet, hook, lasso, input, getState: () => state, getWrangle: () => wrangle };
+window.__cc = { player, herd, wallet, hook, lasso, input, bots, getState: () => state, getWrangle: () => wrangle };
 
 // PWA
 if ('serviceWorker' in navigator && import.meta.env.PROD) {

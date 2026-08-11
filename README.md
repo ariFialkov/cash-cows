@@ -44,8 +44,15 @@ the throw while aiming.
   easier to hit, and cows can be cornered against the fence. The range carries
   ~156 head at a time, with distance culling + animation LOD keeping it cheap.
 - **Radar minimap** (top-right): cream dots are standard cows, purple/gold/red
-  dots are mystery/offer/crash specials. Specials beyond radar range clamp to
-  the rim as direction markers — ride toward them to hunt specials.
+  dots are mystery/offer/crash specials, pale-blue dots are rival cowboys.
+  Specials beyond radar range clamp to the rim as direction markers — ride
+  toward them to hunt specials.
+- **Simulated multiplayer**: five named bot cowboys (Dusty, Big Tex, Maribel,
+  Cactus Joe, Sundown) roam the range hunting standard cows with their own
+  lassos and bet sizes, drawn from the same odds tables as the player. Wins pop
+  a floating +amount over the rider and a feed toast (big multipliers get a
+  "lucky herd!" call-out). They leave special cows — and any cow near you —
+  alone, and cows flee from whichever rider is closest.
 - **Special cows** (all the same average RTP as everything else):
   - 🟣 **Mystery cow** — glowing purple, every one is the same size; the
     multiplier (1.3×–20×) is hidden until the wrangle resolves.
