@@ -138,10 +138,10 @@ export const tmpl = {
       <div class="rp-sub">${sub}</div>
       <div class="rp-bar"><div id="rp-progress"></div></div>`;
   },
-  offer(mult, bet) {
+  offer(mult, bet, holdPct) {
     return `<div class="rp-title">The Deal</div>
       <div class="rp-big">${mult}&times;</div>
-      <div class="rp-sub">Risk ${fmt(bet)} to win ${fmt(mult * bet)}</div>
+      <div class="rp-sub">Risk ${fmt(bet)} to win ${fmt(mult * bet)} &middot; ${holdPct}% to hold</div>
       <div class="rp-row">
         <button class="rp-yes" id="rp-yes">TAKE IT</button>
         <button class="rp-no" id="rp-no">PASS</button>

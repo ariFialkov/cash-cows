@@ -26,10 +26,17 @@ export const LASSO_TIERS = [
 
 export const START_BALANCE = 1000;
 
+// Standard cow size draw, biased toward smaller (frequent-win) cows.
+export function drawStandardSize() {
+  return 0.85 + 0.7 * Math.pow(Math.random(), 2);
+}
+
 // Standard cow multiplier from its size scale s in [0.85, 1.55].
+// Kept low-slung so everyday cows hold often: 1.2x smalls win ~75% of the
+// time, and only the true monsters get long odds.
 export function multiplierForSize(s) {
   const t = clamp01((s - 0.85) / (1.55 - 0.85));
-  const m = 1.4 + t * t * 8.6; // 1.4x (small, safe) .. 10x (huge, risky)
+  const m = 1.2 + Math.pow(t, 1.6) * 6.3; // 1.2x (small, safe) .. 7.5x (huge, risky)
   return round2(m);
 }
 
@@ -63,15 +70,15 @@ export function drawOutcome(mult) {
 // Mystery cows: hidden multiplier drawn from a spread of tiers.
 export function drawMysteryMultiplier() {
   const r = Math.random();
-  if (r < 0.45) return round2(1.4 + Math.random() * 1.6);   // 1.4–3x
-  if (r < 0.80) return round2(3 + Math.random() * 3);       // 3–6x
-  if (r < 0.97) return round2(6 + Math.random() * 6);       // 6–12x
-  return round2(12 + Math.random() * 13);                   // 12–25x jackpot tail
+  if (r < 0.50) return round2(1.3 + Math.random() * 1.2);   // 1.3–2.5x
+  if (r < 0.85) return round2(2.5 + Math.random() * 2.5);   // 2.5–5x
+  if (r < 0.97) return round2(5 + Math.random() * 5);       // 5–10x
+  return round2(10 + Math.random() * 10);                   // 10–20x jackpot tail
 }
 
 // Offer cows: a take-it-or-leave-it deal, drawn on lasso.
 export function drawOffer() {
-  const mult = round2(2 + Math.random() * 10);
+  const mult = round2(1.6 + Math.random() * 6.4);
   return { mult, p: winProbForMultiplier(mult) };
 }
 

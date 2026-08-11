@@ -7,7 +7,7 @@
 
 import * as THREE from 'three';
 import { PEN_HALF } from '../world/world.js';
-import { multiplierForSize, drawMysteryMultiplier } from '../game/economy.js';
+import { multiplierForSize, drawMysteryMultiplier, drawStandardSize } from '../game/economy.js';
 
 const texCache = new Map();
 function spotTexture(bgHex, spotHex, key) {
@@ -253,7 +253,7 @@ export class Cow {
       this.size = 1.4;
       this.mult = null;                    // crash game
     } else {
-      this.size = 0.85 + Math.random() * 0.7;
+      this.size = drawStandardSize();
       this.mult = multiplierForSize(this.size);
     }
 
@@ -359,8 +359,12 @@ export class Cow {
     this.pos.z = THREE.MathUtils.clamp(this.pos.z, -B, B);
     this._settle(dt);
 
-    const animState = this.speed > 0.25 ? 'move' : 'graze';
-    this.rig.animate(dt, animState, this.speed, 0, time);
+    // animation LOD: distant cows skip rig animation (they're culled or tiny
+    // on screen anyway) so a big herd stays cheap
+    if (toPlayer < 75) {
+      const animState = this.speed > 0.25 ? 'move' : 'graze';
+      this.rig.animate(dt, animState, this.speed, 0, time);
+    }
 
     // special cows shimmer
     if (this.kind === 'mystery' || this.kind === 'offer') {

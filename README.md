@@ -31,15 +31,20 @@ the throw while aiming.
 
 - **Lasso = bet size.** Pick your rope in the menu (5 / 10 / 25 / 100 coins) or
   tap the bet pill in-game to cycle. Missed throws cost nothing.
-- **Cow size = risk/reward.** Standard cows vary from 1.4× (small, easy to
-  keep) to 10× (huge, likely to snap the rope). Hook one and the wrangle plays
-  out — win the full multiplier, or the rope snaps and you get a
-  **wrangling-time bonus** proportional to how long you held on.
+- **Aim assist.** Throws magnetize to a cow near the landing point (the aim
+  ring locks on and turns green) and the loop tracks it in flight, so fleeing
+  cows are hittable without pixel-perfect swipes.
+- **Cow size = risk/reward.** Standard cows vary from 1.2× (small — holds
+  ~75% of the time) to 7.5× (huge, likely to snap the rope), with spawn sizes
+  biased small so the average catch holds ~44% of wrangles. The popup shows
+  each cow's multiplier and hold chance. Win the full multiplier, or the rope
+  snaps and you get a **wrangling-time bonus** proportional to how long you
+  held on.
 - **Cows flee** when you ride close. Fundamentals apply: herds bunch up and are
   easier to hit, and cows can be cornered against the fence.
 - **Special cows** (all the same average RTP as everything else):
   - 🟣 **Mystery cow** — glowing purple, every one is the same size; the
-    multiplier (1.4×–25×) is hidden until the wrangle resolves.
+    multiplier (1.3×–20×) is hidden until the wrangle resolves.
   - 🟡 **Offer cow** — golden; once roped it shows a take-it-or-leave-it deal
     above your rider. Pass and the bet is never placed.
   - ⚫🔴 **Crash bull** — a mini crash game. Once roped, your stake climbs

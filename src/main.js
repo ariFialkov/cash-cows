@@ -12,7 +12,7 @@ import { sfx } from './core/sfx.js';
 import { Input } from './input/input.js';
 import { UI, tmpl } from './ui/ui.js';
 import {
-  Wallet, LASSO_TIERS, fmt, round2,
+  Wallet, LASSO_TIERS, fmt, round2, winProbForMultiplier,
   drawOutcome, drawOffer, drawCrashPoint, crashMultAt,
 } from './game/economy.js';
 
@@ -102,6 +102,8 @@ input.onAnyPress = () => sfx.unlock();
 
 const aimTarget = new THREE.Vector3();
 const _hand = new THREE.Vector3();
+const ASSIST_RADIUS = 6; // aim assist: throws magnetize to a cow this close to the target point
+let assistCow = null;
 
 function aimVectorToTarget(dx, dy) {
   const len = Math.hypot(dx, dy);
@@ -113,6 +115,11 @@ function aimVectorToTarget(dx, dy) {
     0,
     player.pos.z + dy * inv * dist
   );
+  assistCow = herd.cowNear(aimTarget, ASSIST_RADIUS);
+  if (assistCow) {
+    aimTarget.x = assistCow.pos.x;
+    aimTarget.z = assistCow.pos.z;
+  }
   const B = PEN_HALF - 1;
   aimTarget.x = THREE.MathUtils.clamp(aimTarget.x, -B, B);
   aimTarget.z = THREE.MathUtils.clamp(aimTarget.z, -B, B);
@@ -128,7 +135,7 @@ input.onAim = (dx, dy) => {
   if (!canThrow()) return;
   if (Math.hypot(dx, dy) < 18) { lasso.cancelAim(); return; }
   aimVectorToTarget(dx, dy);
-  lasso.aimAt(aimTarget, aimTarget.y - 0.15);
+  lasso.aimAt(aimTarget, aimTarget.y - 0.15, !!assistCow);
   document.getElementById('aim-hint').classList.remove('hidden');
 };
 
@@ -144,7 +151,7 @@ input.onAimEnd = (dx, dy) => {
   }
   aimVectorToTarget(dx, dy);
   sfx.whoosh();
-  lasso.throwTo(aimTarget, player.rig.handWorldPos(_hand), onLassoLand);
+  lasso.throwTo(aimTarget, player.rig.handWorldPos(_hand), onLassoLand, assistCow);
 };
 
 function onLassoLand(pt) {
@@ -169,7 +176,8 @@ function hook(cow) {
 
   if (cow.kind === 'offer') {
     wrangle = { mode: 'offer', cow, bet, t: 0, timeout: 8 };
-    const el = ui.showPopup(tmpl.offer(cow.offerData?.mult ?? (cow.offerData = drawOffer()).mult, bet));
+    const offerMult = cow.offerData?.mult ?? (cow.offerData = drawOffer()).mult;
+    const el = ui.showPopup(tmpl.offer(offerMult, bet, Math.round(winProbForMultiplier(offerMult) * 100)));
     el.querySelector('#rp-yes').addEventListener('click', () => acceptOffer());
     el.querySelector('#rp-no').addEventListener('click', () => declineOffer());
     return;
@@ -190,9 +198,10 @@ function hook(cow) {
   const outcome = drawOutcome(cow.mult);
   const mystery = cow.kind === 'mystery';
   wrangle = { mode: 'wrangle', cow, bet, outcome, t: 0, mystery };
+  const holdPct = Math.round(winProbForMultiplier(cow.mult) * 100);
   ui.showPopup(tmpl.wrangle(
     mystery ? '???' : `${fmt(cow.mult * bet)}`,
-    mystery ? 'Mystery cow — hold on!' : `${cow.mult}&times; — hold on!`
+    mystery ? 'Mystery cow — hold on!' : `${cow.mult}&times; &middot; ${holdPct}% to hold`
   ));
 }
 
@@ -206,7 +215,8 @@ function acceptOffer() {
   ui.refreshBalance();
   const outcome = drawOutcome(mult);
   wrangle = { mode: 'wrangle', cow, bet, outcome, t: 0, mystery: false };
-  ui.showPopup(tmpl.wrangle(`${fmt(mult * bet)}`, `${mult}&times; — hold on!`));
+  const holdPct = Math.round(winProbForMultiplier(mult) * 100);
+  ui.showPopup(tmpl.wrangle(`${fmt(mult * bet)}`, `${mult}&times; &middot; ${holdPct}% to hold`));
 }
 
 function declineOffer() {

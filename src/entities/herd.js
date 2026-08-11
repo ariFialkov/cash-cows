@@ -5,8 +5,8 @@ import * as THREE from 'three';
 import { Cow } from './cow.js';
 import { PEN_HALF } from '../world/world.js';
 
-const TARGET_STANDARD = 34;
-const TARGET_SPECIALS = { mystery: 3, offer: 3, crash: 2 };
+const TARGET_STANDARD = 58;
+const TARGET_SPECIALS = { mystery: 5, offer: 5, crash: 3 };
 
 export class Herd {
   constructor(scene, world) {

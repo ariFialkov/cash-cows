@@ -61,11 +61,14 @@ export class Lasso {
   }
 
   // --- aiming preview -------------------------------------------------------
-  aimAt(worldTarget, groundY) {
+  // locked: aim assist has snapped onto a cow — tint the ring green
+  aimAt(worldTarget, groundY, locked = false) {
     this.state = 'aiming';
     this.target.copy(worldTarget);
     this.aimRing.visible = true;
     this.aimRing.position.set(worldTarget.x, groundY + 0.08, worldTarget.z);
+    this.aimRing.material.color.setHex(locked ? 0x7ef07a : 0xffe08a);
+    this.aimLine.material.color.setHex(locked ? 0x7ef07a : 0xffe08a);
     this.aimLine.visible = true;
   }
 
@@ -76,7 +79,9 @@ export class Lasso {
   }
 
   // --- throw ----------------------------------------------------------------
-  throwTo(worldTarget, handPos, onLand) {
+  // homingCow (optional): aim-assist target — the loop tracks it in flight so
+  // fleeing cows don't outrun a well-aimed throw.
+  throwTo(worldTarget, handPos, onLand, homingCow = null) {
     this.state = 'flying';
     this.aimRing.visible = false;
     this.aimLine.visible = false;
@@ -86,6 +91,7 @@ export class Lasso {
     const dist = handPos.distanceTo(worldTarget);
     this.flyDur = 0.28 + dist * 0.022;
     this.onLand = onLand;
+    this.homing = homingCow;
   }
 
   attach(cow) {
@@ -112,6 +118,13 @@ export class Lasso {
     if (this.state === 'flying') {
       this.flyT += dt;
       const t = Math.min(1, this.flyT / this.flyDur);
+      if (this.homing && !this.homing.captured && this.homing.state !== 'lassoed') {
+        // steer the landing point onto the assisted cow as it runs
+        const k = Math.min(1, dt * (4 + t * 10));
+        this.flyTo.x += (this.homing.pos.x - this.flyTo.x) * k;
+        this.flyTo.z += (this.homing.pos.z - this.flyTo.z) * k;
+        this.flyTo.y = this.homing.pos.y + 0.3;
+      }
       const p = this._bezier(t, hand);
       this.loop.position.copy(p);
       this.loop.rotation.set(-Math.PI / 2 + (1 - t) * 0.7, this.spinAngle * 0.3, 0);
@@ -121,6 +134,7 @@ export class Lasso {
       if (t >= 1) {
         const cb = this.onLand;
         this.onLand = null;
+        this.homing = null;
         this.state = 'idle';
         if (cb) cb(this.flyTo.clone());
       }
