@@ -1,11 +1,18 @@
 // The lasso: an overhead spinning loop while riding, a ballistic throw with a
 // trailing rope, and a taut, sagging line + cinched loop during a wrangle.
-// The rope is a CatmullRom tube rebuilt per-frame; the loop is a torus.
+//
+// Both the rope AND the loop are rebuilt per-frame as tubes. The loop is a
+// closed CatmullRom ring of control points whose radius/lift deform with the
+// forces on it — centrifugal lag while spinning, drag flutter in flight,
+// cinch tension during a wrangle, crumpling when the rope snaps — with a
+// honda knot where the rope ties in.
 
 import * as THREE from 'three';
 
 const ROPE_RADIUS = 0.028;
 const ROPE_SEGS = 36;
+const LOOP_PTS = 16;
+const LOOP_SEGS = 40;
 
 export class Lasso {
   constructor(scene) {
@@ -19,9 +26,16 @@ export class Lasso {
     this.rope.frustumCulled = false;
     scene.add(this.rope);
 
-    this.loop = new THREE.Mesh(new THREE.TorusGeometry(0.55, ROPE_RADIUS, 8, 28), this.ropeMat);
+    // dynamic loop mesh (geometry lives in world space)
+    this.loop = new THREE.Mesh(new THREE.BufferGeometry(), this.ropeMat);
     this.loop.castShadow = true;
+    this.loop.frustumCulled = false;
     scene.add(this.loop);
+
+    // honda knot at the rope/loop junction
+    this.honda = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), this.ropeMat);
+    this.honda.castShadow = true;
+    scene.add(this.honda);
 
     // aim indicator: dashed arc + landing ring
     this.aimRing = new THREE.Mesh(
@@ -48,11 +62,23 @@ export class Lasso {
     this.target = new THREE.Vector3();
     this.attachedCow = null;
     this.onLand = null;
+    this.homing = null;
     this.snapT = 0;
+
+    // loop dynamics state
+    this.loopCenter = new THREE.Vector3(0, -10, 0);
+    this.loopRadius = 0.8;
+    this._n = new THREE.Vector3(0, 1, 0);
+    this._e1 = new THREE.Vector3(1, 0, 0);
+    this._e2 = new THREE.Vector3(0, 0, 1);
+    this._hondaPt = new THREE.Vector3();
+    this._pts = [];
+    this._loopPts = [];
+    for (let i = 0; i < LOOP_PTS; i++) this._loopPts.push(new THREE.Vector3());
 
     this._v1 = new THREE.Vector3();
     this._v2 = new THREE.Vector3();
-    this._pts = [];
+    this._v3 = new THREE.Vector3();
   }
 
   setColor(hex) {
@@ -61,7 +87,6 @@ export class Lasso {
   }
 
   // --- aiming preview -------------------------------------------------------
-  // locked: aim assist has snapped onto a cow — tint the ring green
   aimAt(worldTarget, groundY, locked = false) {
     this.state = 'aiming';
     this.target.copy(worldTarget);
@@ -79,8 +104,6 @@ export class Lasso {
   }
 
   // --- throw ----------------------------------------------------------------
-  // homingCow (optional): aim-assist target — the loop tracks it in flight so
-  // fleeing cows don't outrun a well-aimed throw.
   throwTo(worldTarget, handPos, onLand, homingCow = null) {
     this.state = 'flying';
     this.aimRing.visible = false;
@@ -100,7 +123,6 @@ export class Lasso {
   }
 
   snap() {
-    // rope breaks: brief whip-away then back to idle
     this.state = 'snapping';
     this.snapT = 0;
     this.attachedCow = null;
@@ -111,6 +133,48 @@ export class Lasso {
     this.attachedCow = null;
   }
 
+  // --- loop construction ----------------------------------------------------
+  _basis(n) {
+    this._n.copy(n).normalize();
+    this._e1.set(0, 1, 0).cross(this._n);
+    if (this._e1.lengthSq() < 1e-4) this._e1.set(1, 0, 0);
+    this._e1.normalize();
+    this._e2.copy(this._n).cross(this._e1).normalize();
+  }
+
+  // radiusFn(theta) -> { r, lift }; hondaPhi: plane angle the rope ties in at
+  _buildLoop(center, radiusFn, hondaPhi) {
+    for (let i = 0; i < LOOP_PTS; i++) {
+      const th = (i / LOOP_PTS) * Math.PI * 2;
+      // pinch the ring toward the honda so the loop hangs off the knot
+      let d = th - hondaPhi;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      const pinch = Math.exp(-(d * d) / 0.22);
+      const { r, lift } = radiusFn(th);
+      const rr = r * (1 - 0.18 * pinch);
+      this._loopPts[i].copy(center)
+        .addScaledVector(this._e1, Math.cos(th) * rr)
+        .addScaledVector(this._e2, Math.sin(th) * rr)
+        .addScaledVector(this._n, lift);
+    }
+    const curve = new THREE.CatmullRomCurve3(this._loopPts, true, 'catmullrom', 0.65);
+    const geo = new THREE.TubeGeometry(curve, LOOP_SEGS, ROPE_RADIUS, 6, true);
+    this.loop.geometry.dispose();
+    this.loop.geometry = geo;
+    // honda point on the ring
+    this._hondaPt.copy(center)
+      .addScaledVector(this._e1, Math.cos(hondaPhi) * radiusFn(hondaPhi).r * 0.86)
+      .addScaledVector(this._e2, Math.sin(hondaPhi) * radiusFn(hondaPhi).r * 0.86);
+    this.honda.position.copy(this._hondaPt);
+    this.loopCenter.copy(center);
+  }
+
+  _planeAngleTo(point, center) {
+    const d = this._v3.copy(point).sub(center);
+    return Math.atan2(d.dot(this._e2), d.dot(this._e1));
+  }
+
   // --- per-frame ------------------------------------------------------------
   update(dt, player, time) {
     const hand = player.rig.handWorldPos(this._v1);
@@ -119,18 +183,31 @@ export class Lasso {
       this.flyT += dt;
       const t = Math.min(1, this.flyT / this.flyDur);
       if (this.homing && !this.homing.captured && this.homing.state !== 'lassoed') {
-        // steer the landing point onto the assisted cow as it runs
         const k = Math.min(1, dt * (4 + t * 10));
         this.flyTo.x += (this.homing.pos.x - this.flyTo.x) * k;
         this.flyTo.z += (this.homing.pos.z - this.flyTo.z) * k;
         this.flyTo.y = this.homing.pos.y + 0.3;
       }
       const p = this._bezier(t, hand);
-      this.loop.position.copy(p);
-      this.loop.rotation.set(-Math.PI / 2 + (1 - t) * 0.7, this.spinAngle * 0.3, 0);
-      const spread = 0.55 + Math.sin(t * Math.PI) * 0.35; // loop opens mid-flight
-      this.loop.scale.setScalar(spread / 0.55);
-      this._ropeBetween(hand, p, 0.35 * (1 - t * 0.5));
+      const vel = this._bezier(Math.min(1, t + 0.03), hand).sub(p); // flight direction
+      const speed = vel.length() / 0.03 * (1 / this.flyDur);
+      // plane starts pitched into the throw, lays flat as it drops on target
+      const nv = this._v2.copy(vel).setY(0);
+      if (nv.lengthSq() > 1e-6) nv.normalize().multiplyScalar(0.9 * (1 - t));
+      else nv.set(0, 0, 0);
+      nv.y = 1;
+      this._basis(nv);
+      this.spinAngle += dt * 9 * (1 - t * 0.6);
+      const R = 0.55 + Math.sin(t * Math.PI) * 0.35;
+      const flut = Math.min(1, speed * 0.05) * (1 - t * 0.5);
+      const phiV = this._planeAngleTo(this._v3.copy(p).add(vel), p);
+      const sa = this.spinAngle;
+      this._buildLoop(p, (th) => ({
+        // drag: the trailing edge of the loop lags and ripples
+        r: R * (1 + 0.05 * Math.sin(2 * th + sa * 2) + 0.07 * flut * Math.sin(3 * th - time * 18) + 0.04 * flut * Math.sin(5 * th + time * 23)),
+        lift: R * (-0.14 * flut * Math.cos(th - phiV) + 0.05 * flut * Math.sin(2 * th - time * 16)),
+      }), this._planeAngleTo(hand, p));
+      this._ropeBetween(hand, this._hondaPt, 0.35 * (1 - t * 0.5));
       if (t >= 1) {
         const cb = this.onLand;
         this.onLand = null;
@@ -142,53 +219,65 @@ export class Lasso {
     }
 
     if (this.state === 'attached' && this.attachedCow) {
-      const neck = this.attachedCow.rig.neckWorldPos(this._v2);
+      const cow = this.attachedCow;
+      const neck = cow.rig.neckWorldPos(this._v2);
       neck.y += 0.1;
-      // cinched loop around the neck
-      this.loop.position.copy(neck);
-      this.loop.rotation.set(-1.25, this.attachedCow.heading, 0);
-      const s = this.attachedCow.size * 0.75;
-      this.loop.scale.setScalar(s + Math.sin(time * 11) * 0.03);
-      // taut rope with struggle jitter
+      // ring seated around the neck, tipped with the cow's stance
+      const fwd = this._v3.set(Math.sin(cow.heading), 0.5, Math.cos(cow.heading));
+      this._basis(fwd);
+      const R = cow.size * 0.42;
+      const jig = 0.4 + cow.struggleIntensity * 0.6;
+      this._buildLoop(neck, (th) => ({
+        r: R * (1 + 0.05 * jig * Math.sin(3 * th + time * 9) + 0.035 * jig * Math.sin(5 * th - time * 12) + 0.02 * Math.sin(time * 11)),
+        lift: R * 0.08 * jig * Math.sin(2 * th + time * 8),
+      }), this._planeAngleTo(hand, neck));
       const sag = 0.25 + Math.sin(time * 7.3) * 0.1;
-      this._ropeBetween(hand, neck, sag, time);
+      this._ropeBetween(hand, this._hondaPt, sag, time);
       return;
     }
 
     if (this.state === 'snapping') {
       this.snapT += dt;
-      const k = this.snapT / 0.4;
-      // rope recoils toward the hand
-      const back = this._v2.copy(hand).add(new THREE.Vector3(Math.sin(time * 40) * 0.4, 1.2 - k, Math.cos(time * 37) * 0.4));
-      this.loop.position.lerp(back, Math.min(1, dt * 10));
-      this.loop.scale.setScalar(Math.max(0.4, 1 - k * 0.6));
-      this._ropeBetween(hand, this.loop.position, 0.6 * (1 - k));
+      const k = Math.min(1, this.snapT / 0.4);
+      const back = this._v2.copy(hand).add(this._v3.set(Math.sin(time * 40) * 0.4, 1.2 - k, Math.cos(time * 37) * 0.4));
+      const center = this.loopCenter.lerp(back, Math.min(1, dt * 10));
+      this._basis(this._v3.set(Math.sin(time * 6) * 0.4, 1, Math.cos(time * 5) * 0.4));
+      const R = Math.max(0.2, this.loopRadius * (1 - k * 0.55));
+      this._buildLoop(center, (th) => ({
+        // crumple: high-frequency buckling as the tension lets go
+        r: R * (1 + 0.28 * k * Math.sin(4 * th + time * 30) + 0.18 * k * Math.sin(7 * th - time * 41)),
+        lift: R * 0.2 * k * Math.sin(3 * th + time * 26),
+      }), this._planeAngleTo(hand, center));
+      this._ropeBetween(hand, this._hondaPt, 0.6 * (1 - k));
       if (k >= 1) this.state = 'idle';
       return;
     }
 
-    // idle / aiming: spin overhead
-    this.spinAngle += dt * (this.state === 'aiming' ? 13 : 7.5);
-    const r = this.state === 'aiming' ? 1.05 : 0.8;
-    const center = this._v2.set(player.pos.x, hand.y + 0.75, player.pos.z);
-    this.loop.position.set(
-      center.x + Math.cos(this.spinAngle) * 0.25,
-      center.y + Math.sin(this.spinAngle * 2) * 0.05,
-      center.z + Math.sin(this.spinAngle) * 0.25
+    // idle / aiming: overhead spin
+    const aiming = this.state === 'aiming';
+    this.spinAngle += dt * (aiming ? 13 : 7.5);
+    const sa = this.spinAngle;
+    const R = aiming ? 1.0 : 0.78;
+    this.loopRadius = R;
+    const center = this._v2.set(
+      player.pos.x + Math.cos(sa) * 0.22,
+      hand.y + 0.72 + Math.sin(sa * 2) * 0.04,
+      player.pos.z + Math.sin(sa) * 0.22
     );
-    this.loop.rotation.set(-Math.PI / 2 + 0.18, 0, 0);
-    this.loop.rotation.z = this.spinAngle;
-    this.loop.scale.setScalar(r / 0.55);
-    // short rope from hand to loop edge
-    const edge = this.loop.position.clone().add(new THREE.Vector3(Math.cos(this.spinAngle) * r, 0, Math.sin(this.spinAngle) * r));
-    this._ropeBetween(hand, edge, 0.12);
+    // plane tips slightly, wobbling with the spin
+    this._basis(this._v3.set(Math.cos(sa) * 0.16, 1, Math.sin(sa) * 0.16));
+    const spinRate = aiming ? 1.35 : 1;
+    this._buildLoop(center, (th) => ({
+      // centrifugal lag: a rotating oval + travelling flutter waves
+      r: R * (1 + 0.09 * Math.sin(2 * th - sa * 2) + 0.05 * Math.sin(3 * th - time * 9 * spinRate) + 0.03 * Math.sin(5 * th + time * 13)),
+      lift: R * (0.07 * Math.sin(2 * th - sa * 2 + 1.2) + 0.04 * Math.sin(3 * th + time * 8)),
+    }), this._planeAngleTo(hand, center));
+    this._ropeBetween(hand, this._hondaPt, 0.1);
 
-    if (this.state === 'aiming') {
-      // dashed arc hand → target
+    if (aiming) {
       const pts = [];
       for (let i = 0; i <= 20; i++) {
-        const t = i / 20;
-        pts.push(this._bezierTo(t, hand, this.target, new THREE.Vector3()));
+        pts.push(this._bezierTo(i / 20, hand, this.target, new THREE.Vector3()));
       }
       this.aimLine.geometry.setFromPoints(pts);
       this.aimLine.computeLineDistances();
