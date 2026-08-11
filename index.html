@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#2c1a0e" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="description" content="Cash Cows — a casual 3D lasso betting game. Ride, rope, and win." />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+  <title>Cash Cows</title>
+</head>
+<body>
+  <canvas id="game-canvas"></canvas>
+
+  <!-- ===== HUD (in-game) ===== -->
+  <div id="hud" class="hidden">
+    <div id="balance-pill" class="pill">
+      <span class="coin-ico"></span><span id="balance-value">0</span>
+    </div>
+    <div id="bet-pill" class="pill" title="Lasso / bet size — tap to change">
+      <span id="bet-rope-swatch"></span><span id="bet-value">10</span>
+    </div>
+    <button id="menu-btn" class="pill" aria-label="Menu">&#9776;</button>
+    <div id="toast-stack"></div>
+    <div id="joystick-zone">
+      <div id="joystick-base"><div id="joystick-knob"></div></div>
+    </div>
+    <div id="aim-hint" class="hidden">release to throw</div>
+  </div>
+
+  <!-- Popup anchored above the rider (offer / crash / wrangle) -->
+  <div id="rider-popup" class="hidden">
+    <div id="rp-inner"></div>
+  </div>
+
+  <!-- ===== Main menu ===== -->
+  <div id="menu" class="screen">
+    <div class="menu-card">
+      <h1 class="logo">CASH<span>&#129704;</span>COWS</h1>
+      <p class="tagline">saddle up &middot; rope 'em &middot; cash out</p>
+
+      <div class="custom-rows">
+        <div class="custom-row">
+          <span class="custom-label">Cowboy</span>
+          <div class="swatch-row" id="cowboy-swatches"></div>
+        </div>
+        <div class="custom-row">
+          <span class="custom-label">Horse</span>
+          <div class="swatch-row" id="horse-swatches"></div>
+        </div>
+        <div class="custom-row">
+          <span class="custom-label">Lasso <small>(bet / throw)</small></span>
+          <div class="swatch-row" id="lasso-swatches"></div>
+        </div>
+      </div>
+
+      <button id="start-btn" class="big-btn">RIDE&nbsp;OUT</button>
+      <div class="menu-balance"><span class="coin-ico"></span><span id="menu-balance-value">0</span>
+        <button id="reset-balance-btn" class="tiny-btn hidden">top up</button>
+      </div>
+      <p class="howto">
+        <b>Move:</b> <span class="only-touch">left joystick</span><span class="only-mouse">WASD</span>
+        &nbsp;&nbsp;<b>Lasso:</b> <span class="only-touch">swipe</span><span class="only-mouse">click-drag &amp; release</span> toward a cow
+      </p>
+    </div>
+  </div>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
