@@ -13,6 +13,7 @@ const ROPE_RADIUS = 0.028;
 const ROPE_SEGS = 36;
 const LOOP_PTS = 16;
 const LOOP_SEGS = 40;
+const ROPE_N = 12; // verlet particles
 
 export class Lasso {
   constructor(scene) {
@@ -65,6 +66,16 @@ export class Lasso {
     this.homing = null;
     this.snapT = 0;
 
+    // verlet rope state
+    this.ropeP = [];
+    this.ropePrev = [];
+    for (let i = 0; i < ROPE_N; i++) {
+      this.ropeP.push(new THREE.Vector3(0, -10, 0));
+      this.ropePrev.push(new THREE.Vector3(0, -10, 0));
+    }
+    this._ropeSeeded = false;
+    this._segLen = 0.2;
+
     // loop dynamics state
     this.loopCenter = new THREE.Vector3(0, -10, 0);
     this.loopRadius = 0.8;
@@ -115,6 +126,12 @@ export class Lasso {
     this.flyDur = 0.28 + dist * 0.022;
     this.onLand = onLand;
     this.homing = homingCow;
+    // coil the rope at the hand so it pays out behind the flying loop
+    for (let i = 0; i < ROPE_N; i++) {
+      this.ropeP[i].copy(handPos).add(this._v3.set(
+        Math.sin(i * 2.1) * 0.05, Math.cos(i * 1.7) * 0.05, Math.sin(i * 2.6) * 0.05));
+      this.ropePrev[i].copy(this.ropeP[i]);
+    }
   }
 
   attach(cow) {
@@ -126,6 +143,11 @@ export class Lasso {
     this.state = 'snapping';
     this.snapT = 0;
     this.attachedCow = null;
+    // recoil impulse: the freed tail springs back toward the rider
+    const dir = this._v3.copy(this.ropeP[ROPE_N - 1]).sub(this.ropeP[0]).normalize();
+    for (let i = ROPE_N - 3; i < ROPE_N; i++) {
+      this.ropePrev[i].copy(this.ropeP[i]).addScaledVector(dir, 0.3);
+    }
   }
 
   releaseToIdle() {
@@ -207,7 +229,7 @@ export class Lasso {
         r: R * (1 + 0.05 * Math.sin(2 * th + sa * 2) + 0.07 * flut * Math.sin(3 * th - time * 18) + 0.04 * flut * Math.sin(5 * th + time * 23)),
         lift: R * (-0.14 * flut * Math.cos(th - phiV) + 0.05 * flut * Math.sin(2 * th - time * 16)),
       }), this._planeAngleTo(hand, p));
-      this._ropeBetween(hand, this._hondaPt, 0.35 * (1 - t * 0.5));
+      this._ropeSim(dt, hand, this._hondaPt, { slack: 1.12, gravity: -9 });
       if (t >= 1) {
         const cb = this.onLand;
         this.onLand = null;
@@ -231,25 +253,28 @@ export class Lasso {
         r: R * (1 + 0.05 * jig * Math.sin(3 * th + time * 9) + 0.035 * jig * Math.sin(5 * th - time * 12) + 0.02 * Math.sin(time * 11)),
         lift: R * 0.08 * jig * Math.sin(2 * th + time * 8),
       }), this._planeAngleTo(hand, neck));
-      const sag = 0.25 + Math.sin(time * 7.3) * 0.1;
-      this._ropeBetween(hand, this._hondaPt, sag, time);
+      // rope tautens as the struggle intensifies
+      this._ropeSim(dt, hand, this._hondaPt, {
+        slack: 1.22 - 0.15 * Math.min(1, cow.struggleIntensity),
+        gravity: -12,
+      });
       return;
     }
 
     if (this.state === 'snapping') {
       this.snapT += dt;
-      const k = Math.min(1, this.snapT / 0.4);
-      const back = this._v2.copy(hand).add(this._v3.set(Math.sin(time * 40) * 0.4, 1.2 - k, Math.cos(time * 37) * 0.4));
-      const center = this.loopCenter.lerp(back, Math.min(1, dt * 10));
+      const k = Math.min(1, this.snapT / 0.55);
+      // the freed rope whips back on its own; the crumpling loop rides its tail
+      this._ropeSim(dt, hand, hand, { pinEnd: false, gravity: -11, damping: 0.965 });
+      const center = this.loopCenter.copy(this.ropeP[ROPE_N - 1]);
       this._basis(this._v3.set(Math.sin(time * 6) * 0.4, 1, Math.cos(time * 5) * 0.4));
-      const R = Math.max(0.2, this.loopRadius * (1 - k * 0.55));
+      const R = Math.max(0.18, this.loopRadius * (1 - k * 0.6));
       this._buildLoop(center, (th) => ({
         // crumple: high-frequency buckling as the tension lets go
         r: R * (1 + 0.28 * k * Math.sin(4 * th + time * 30) + 0.18 * k * Math.sin(7 * th - time * 41)),
         lift: R * 0.2 * k * Math.sin(3 * th + time * 26),
       }), this._planeAngleTo(hand, center));
-      this._ropeBetween(hand, this._hondaPt, 0.6 * (1 - k));
-      if (k >= 1) this.state = 'idle';
+      if (k >= 1) { this.state = 'idle'; this._ropeSeeded = false; }
       return;
     }
 
@@ -272,7 +297,7 @@ export class Lasso {
       r: R * (1 + 0.09 * Math.sin(2 * th - sa * 2) + 0.05 * Math.sin(3 * th - time * 9 * spinRate) + 0.03 * Math.sin(5 * th + time * 13)),
       lift: R * (0.07 * Math.sin(2 * th - sa * 2 + 1.2) + 0.04 * Math.sin(3 * th + time * 8)),
     }), this._planeAngleTo(hand, center));
-    this._ropeBetween(hand, this._hondaPt, 0.1);
+    this._ropeSim(dt, hand, this._hondaPt, { slack: 1.05, gravity: -8 });
 
     if (aiming) {
       const pts = [];
@@ -301,21 +326,58 @@ export class Lasso {
     return out;
   }
 
-  _ropeBetween(a, b, sag, time = 0) {
-    const pts = this._pts;
-    pts.length = 0;
-    const n = 9;
-    for (let i = 0; i <= n; i++) {
-      const t = i / n;
-      const p = new THREE.Vector3().lerpVectors(a, b, t);
-      p.y -= Math.sin(t * Math.PI) * sag;
-      if (time && i > 0 && i < n) {
-        p.x += Math.sin(time * 9 + i * 2.1) * 0.03;
-        p.z += Math.cos(time * 8 + i * 1.7) * 0.03;
+  // Verlet rope: integrate gravity + damping, then satisfy segment-length
+  // constraints with both ends pinned (hand and honda). With pinEnd=false the
+  // far end runs free — used while the rope whips back after a snap.
+  _ropeSim(dt, a, b, { slack = 1.08, gravity = -10, pinEnd = true, damping = 0.985 } = {}) {
+    const P = this.ropeP, V = this.ropePrev;
+    if (!this._ropeSeeded) {
+      for (let i = 0; i < ROPE_N; i++) {
+        P[i].lerpVectors(a, b, i / (ROPE_N - 1));
+        V[i].copy(P[i]);
       }
-      pts.push(p);
+      this._ropeSeeded = true;
     }
-    const curve = new THREE.CatmullRomCurve3(pts);
+    const steps = dt > 0.028 ? 2 : 1;
+    const h = dt / steps;
+    for (let s = 0; s < steps; s++) {
+      // integrate free particles
+      const last = pinEnd ? ROPE_N - 1 : ROPE_N;
+      for (let i = 1; i < last; i++) {
+        const p = P[i], v = V[i];
+        const vx = (p.x - v.x) * damping, vy = (p.y - v.y) * damping, vz = (p.z - v.z) * damping;
+        v.copy(p);
+        p.x += vx;
+        p.y += vy + gravity * h * h;
+        p.z += vz;
+      }
+      P[0].copy(a);
+      if (pinEnd) {
+        P[ROPE_N - 1].copy(b);
+        this._segLen = Math.max(0.06, (a.distanceTo(b) * slack) / (ROPE_N - 1));
+      }
+      // distance constraints
+      for (let it = 0; it < 4; it++) {
+        for (let i = 0; i < ROPE_N - 1; i++) {
+          const p1 = P[i], p2 = P[i + 1];
+          const dx = p2.x - p1.x, dy = p2.y - p1.y, dz = p2.z - p1.z;
+          const d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-6;
+          const diff = (d - this._segLen) / d;
+          const w1 = i === 0 ? 0 : 0.5;
+          const w2 = (i + 1 === ROPE_N - 1 && pinEnd) ? 0 : 0.5;
+          const wSum = w1 + w2;
+          if (wSum === 0) continue;
+          const k1 = (w1 / wSum) * diff, k2 = (w2 / wSum) * diff;
+          p1.x += dx * k1; p1.y += dy * k1; p1.z += dz * k1;
+          p2.x -= dx * k2; p2.y -= dy * k2; p2.z -= dz * k2;
+        }
+      }
+      // keep the free tail above ground while it whips
+      if (!pinEnd) {
+        for (let i = 1; i < ROPE_N; i++) if (P[i].y < a.y - 1.6) P[i].y = a.y - 1.6;
+      }
+    }
+    const curve = new THREE.CatmullRomCurve3(P);
     const geo = new THREE.TubeGeometry(curve, ROPE_SEGS, ROPE_RADIUS, 6, false);
     this.rope.geometry.dispose();
     this.rope.geometry = geo;
