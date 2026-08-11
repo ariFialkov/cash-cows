@@ -8,10 +8,10 @@ import { PEN_HALF } from '../world/world.js';
 import { loft, loftUp, loftDown } from '../core/loft.js';
 
 export const HORSE_COATS = [
-  { body: 0x8a5a2b, mane: 0x3d2812, name: 'Chestnut' },
-  { body: 0x4a3527, mane: 0x1d1410, name: 'Bay' },
-  { body: 0xd9d4c8, mane: 0xa9a294, name: 'Grey' },
-  { body: 0x232323, mane: 0x0d0d0d, name: 'Midnight' },
+  { body: 0x8a5a2b, mane: 0x3d2812, sock: 0xe8e2d4, blaze: true, stripe: true, name: 'Chestnut' },
+  { body: 0x4a3527, mane: 0x1d1410, sock: 0x241a12, blaze: true, stripe: true, name: 'Bay' },
+  { body: 0xd9d4c8, mane: 0xa9a294, sock: 0xbdb7aa, blaze: false, stripe: false, name: 'Grey' },
+  { body: 0x232323, mane: 0x0d0d0d, sock: 0xe8e2d4, blaze: true, stripe: false, name: 'Midnight' },
 ];
 export const COWBOY_COLORS = [
   { shirt: 0xb03a2e, name: 'Red' },
@@ -87,7 +87,8 @@ export class HorseRider {
     this.mats = {
       body: mat(coat.body),
       mane: mat(coat.mane, 0.95),
-      sock: mat(0xe8e2d4),
+      sock: mat(coat.sock),
+      marking: mat(0xf2ede2, 0.95),
       hoof: mat(0x2b2119, 0.6),
       tack: mat(0x50331a, 0.7),
       saddle: mat(0x6e451e, 0.65),
@@ -105,7 +106,10 @@ export class HorseRider {
     const cb = COWBOY_COLORS[cowboyIdx % COWBOY_COLORS.length];
     this.mats.body.color.setHex(coat.body);
     this.mats.mane.color.setHex(coat.mane);
+    this.mats.sock.color.setHex(coat.sock);
     this.mats.shirt.color.setHex(cb.shirt);
+    if (this.blaze) this.blaze.visible = coat.blaze;
+    if (this.stripe) this.stripe.visible = coat.stripe;
   }
 
   _build() {
@@ -115,7 +119,7 @@ export class HorseRider {
 
     // sculpted barrel: croup -> hindquarters -> flank -> belly -> girth ->
     // withers -> chest, with a real topline and belly curve
-    add(this.body, loft([
+    const bodySections = [
       { z: -0.80, rx: 0.05, ryT: 0.06, ryB: 0.05, y: 0.13 },
       { z: -0.72, rx: 0.16, ryT: 0.18, ryB: 0.15, y: 0.08 },
       { z: -0.58, rx: 0.29, ryT: 0.31, ryB: 0.27, y: 0.02 },
@@ -127,11 +131,19 @@ export class HorseRider {
       { z: 0.58, rx: 0.24, ryT: 0.32, ryB: 0.24, y: 0.03 },
       { z: 0.72, rx: 0.13, ryT: 0.18, ryB: 0.13, y: 0.05 },
       { z: 0.79, rx: 0.04, ryT: 0.05, ryB: 0.04, y: 0.07 },
-    ], 18), M.body);
+    ];
+    add(this.body, loft(bodySections, 18), M.body);
+    // dorsal stripe: a thin contour-hugging shell along the topline
+    this.stripe = add(this.body, loft(bodySections.slice(1, 9), 8, {
+      thetaStart: Math.PI / 2 - 0.16, thetaLength: 0.32, inflate: 0.02, caps: false,
+    }), M.mane);
+    this.stripe.castShadow = false;
 
     // ------- neck & head -------
+    // neck pivots at the chest and hangs FORWARD (positive x-rotation tips
+    // the neck axis toward +z, the direction the horse faces)
     this.neck = pivot(this.body, 0, 0.22, 0.62);
-    this.neck.rotation.x = -0.85;
+    this.neck.rotation.x = 0.5;
     // tapering neck with a crest, wide where it melts into the shoulders
     add(this.neck, loftUp([
       { z: -0.06, rx: 0.20, ryT: 0.27, ryB: 0.24 },
@@ -150,9 +162,9 @@ export class HorseRider {
     }
 
     this.head = pivot(this.neck, 0, 0.58, 0.05);
-    this.head.rotation.x = 1.25;
+    this.head.rotation.x = -0.05; // rest pitch; animate() drives from here
     // sculpted head: broad cheeks and brow tapering to a soft square muzzle
-    add(this.head, loft([
+    const headSections = [
       { z: -0.14, rx: 0.04, ry: 0.045, y: 0.02 },
       { z: -0.08, rx: 0.108, ryT: 0.12, ryB: 0.13, y: 0.015 },
       { z: 0.04, rx: 0.118, ryT: 0.12, ryB: 0.14, y: 0.01 },
@@ -161,7 +173,13 @@ export class HorseRider {
       { z: 0.37, rx: 0.07, ryT: 0.075, ryB: 0.078, y: -0.022 },
       { z: 0.46, rx: 0.062, ryT: 0.06, ryB: 0.068, y: -0.03 },
       { z: 0.51, rx: 0.028, ry: 0.03, y: -0.034 },
-    ], 14), M.body);
+    ];
+    add(this.head, loft(headSections, 14), M.body);
+    // face blaze running brow to muzzle
+    this.blaze = add(this.head, loft(headSections.slice(2, 7), 6, {
+      thetaStart: Math.PI / 2 - 0.22, thetaLength: 0.44, inflate: 0.025, caps: false,
+    }), M.marking);
+    this.blaze.castShadow = false;
     const forelock = add(this.head, new THREE.SphereGeometry(0.07, 8, 6), M.mane, 0, 0.09, 0.0); // forelock
     forelock.scale.set(0.9, 0.5, 1.3);
     // eyes
@@ -207,28 +225,71 @@ export class HorseRider {
     // ------- rider -------
     this.rider = pivot(this.body, 0, 0.42, 0.02);
     this.torso = pivot(this.rider, 0, 0.08, 0);
-    const chest = new THREE.CapsuleGeometry(0.16, 0.3, 6, 10);
-    add(this.torso, chest, M.shirt, 0, 0.32, 0);
-    add(this.torso, new THREE.BoxGeometry(0.3, 0.1, 0.2), M.pants, 0, 0.06, 0); // hips
+    // hips + belt
+    add(this.torso, loftUp([
+      { z: -0.02, rx: 0.145, ry: 0.105 },
+      { z: 0.05, rx: 0.155, ry: 0.115 },
+      { z: 0.12, rx: 0.145, ry: 0.108 },
+    ], 12), M.pants);
+    add(this.torso, new THREE.CylinderGeometry(0.152, 0.156, 0.035, 14), M.tack, 0, 0.135, 0);
+    add(this.torso, new THREE.BoxGeometry(0.05, 0.035, 0.02), mat(0xc8a94a, 0.4), 0, 0.135, 0.105); // buckle
+    // shirt torso: waist -> chest -> shoulders
+    add(this.torso, loftUp([
+      { z: 0.13, rx: 0.14, ry: 0.10 },
+      { z: 0.25, rx: 0.145, ry: 0.102 },
+      { z: 0.37, rx: 0.165, ry: 0.115 },
+      { z: 0.46, rx: 0.168, ry: 0.115 },
+      { z: 0.54, rx: 0.10, ry: 0.075 },
+    ], 12), M.shirt);
     // head + hat
     this.riderHead = pivot(this.torso, 0, 0.56, 0);
-    add(this.riderHead, new THREE.SphereGeometry(0.11, 12, 10), M.skin, 0, 0.05, 0);
-    add(this.riderHead, new THREE.CylinderGeometry(0.24, 0.26, 0.025, 16), M.hat, 0, 0.13, 0);
-    add(this.riderHead, new THREE.CylinderGeometry(0.1, 0.12, 0.12, 12), M.hat, 0, 0.19, 0);
+    add(this.riderHead, new THREE.SphereGeometry(0.105, 14, 12), M.skin, 0, 0.05, 0);
+    add(this.riderHead, new THREE.SphereGeometry(0.02, 8, 6), M.skin, 0, 0.035, 0.1); // nose
+    // curved-brim hat: lathe profile swept around y
+    const brim = new THREE.LatheGeometry([
+      new THREE.Vector2(0.0, 0.125), new THREE.Vector2(0.1, 0.122),
+      new THREE.Vector2(0.18, 0.12), new THREE.Vector2(0.235, 0.135),
+      new THREE.Vector2(0.26, 0.158),
+    ], 20);
+    const brimMesh = add(this.riderHead, brim, M.hat, 0, 0, 0);
+    brimMesh.material.side = THREE.DoubleSide;
+    add(this.riderHead, loftUp([
+      { z: 0.12, rx: 0.105, ry: 0.115 },
+      { z: 0.17, rx: 0.10, ry: 0.108 },
+      { z: 0.23, rx: 0.085, ry: 0.09 },
+      { z: 0.255, rx: 0.045, ry: 0.05 },
+    ], 12), M.hat);
+    add(this.riderHead, new THREE.CylinderGeometry(0.107, 0.11, 0.03, 14), M.tack, 0, 0.145, 0); // hatband
     // bandana
     add(this.riderHead, new THREE.SphereGeometry(0.07, 8, 6), M.blanket, 0, -0.03, 0.02);
 
     // arms — right arm swings the lasso
-    this.shoulderR = pivot(this.torso, -0.21, 0.44, 0);
-    add(this.shoulderR, new THREE.CapsuleGeometry(0.05, 0.2, 4, 8), M.shirt, 0, -0.13, 0);
-    this.elbowR = pivot(this.shoulderR, 0, -0.26, 0);
-    add(this.elbowR, new THREE.CapsuleGeometry(0.042, 0.18, 4, 8), M.skin, 0, -0.11, 0);
+    const buildArm = (side) => {
+      const shoulder = pivot(this.torso, side * -0.21, 0.44, 0);
+      add(shoulder, new THREE.SphereGeometry(0.06, 10, 8), M.shirt, 0, -0.01, 0);
+      add(shoulder, loftDown([
+        { z: 0.02, rx: 0.055, ry: 0.058 },
+        { z: 0.14, rx: 0.048, ry: 0.05 },
+        { z: 0.26, rx: 0.044, ry: 0.045 },
+      ]), M.shirt);
+      const elbow = pivot(shoulder, 0, -0.26, 0);
+      add(elbow, loftDown([
+        { z: 0, rx: 0.045, ry: 0.047 },
+        { z: 0.12, rx: 0.04, ry: 0.041 },
+        { z: 0.22, rx: 0.033, ry: 0.034 },
+      ]), M.skin);
+      return { shoulder, elbow };
+    };
+    const armR = buildArm(1);
+    this.shoulderR = armR.shoulder;
+    this.elbowR = armR.elbow;
     this.handR = pivot(this.elbowR, 0, -0.24, 0);
+    add(this.handR, new THREE.SphereGeometry(0.036, 8, 6), M.skin, 0, 0.01, 0); // fist
 
-    this.shoulderL = pivot(this.torso, 0.21, 0.44, 0);
-    add(this.shoulderL, new THREE.CapsuleGeometry(0.05, 0.2, 4, 8), M.shirt, 0, -0.13, 0);
-    this.elbowL = pivot(this.shoulderL, 0, -0.26, 0);
-    add(this.elbowL, new THREE.CapsuleGeometry(0.042, 0.18, 4, 8), M.skin, 0, -0.11, 0);
+    const armL = buildArm(-1);
+    this.shoulderL = armL.shoulder;
+    this.elbowL = armL.elbow;
+    add(this.elbowL, new THREE.SphereGeometry(0.036, 8, 6), M.skin, 0, -0.24, 0); // rein hand
     // reins pose
     this.shoulderL.rotation.set(-0.5, 0, -0.15);
     this.elbowL.rotation.x = -0.9;
@@ -237,11 +298,23 @@ export class HorseRider {
     for (const side of [1, -1]) {
       const hip = pivot(this.rider, side * 0.17, 0.05, 0.02);
       hip.rotation.set(-0.5, 0, side * 0.35);
-      add(hip, new THREE.CapsuleGeometry(0.065, 0.24, 4, 8), M.pants, 0, -0.15, 0);
+      add(hip, loftDown([
+        { z: -0.03, rx: 0.075, ry: 0.085 },
+        { z: 0.15, rx: 0.066, ry: 0.07 },
+        { z: 0.32, rx: 0.058, ry: 0.06 },
+      ]), M.pants);
       const knee = pivot(hip, 0, -0.32, 0);
       knee.rotation.x = 1.15;
-      add(knee, new THREE.CapsuleGeometry(0.055, 0.22, 4, 8), M.pants, 0, -0.14, 0);
-      add(knee, new THREE.BoxGeometry(0.09, 0.08, 0.2), M.boots, 0, -0.3, 0.04);
+      add(knee, loftDown([
+        { z: 0, rx: 0.06, ry: 0.062 },
+        { z: 0.13, rx: 0.052, ry: 0.054 },
+        { z: 0.24, rx: 0.047, ry: 0.048 },
+      ]), M.pants);
+      // boot: shaft, foot and heel
+      add(knee, new THREE.CylinderGeometry(0.05, 0.055, 0.09, 10), M.boots, 0, -0.28, 0);
+      const toe = add(knee, new THREE.SphereGeometry(0.05, 8, 6), M.boots, 0, -0.325, 0.07);
+      toe.scale.set(0.9, 0.65, 1.5);
+      add(knee, new THREE.BoxGeometry(0.05, 0.04, 0.04), M.boots, 0, -0.335, -0.03);
     }
 
     this.group.traverse((o) => { if (o.isMesh) o.castShadow = true; });
@@ -286,10 +359,10 @@ export class HorseRider {
       }
     }
 
-    // neck & head — stretch out at speed, graze-bob at idle
-    const neckBase = -0.85 + run * 0.35 + (galloping ? Math.cos(P) * 0.08 * run : 0);
+    // neck & head — neck hangs forward and stretches out at speed
+    const neckBase = 0.5 + run * 0.35 + (galloping ? Math.cos(P) * 0.08 * run : 0);
     this.neck.rotation.x = neckBase + Math.sin(time * 0.7) * 0.02;
-    this.head.rotation.x = 1.25 - run * 0.25;
+    this.head.rotation.x = -0.05 - run * 0.2;
     this.head.rotation.y = THREE.MathUtils.clamp(this.leanSm * 0.35, -0.4, 0.4);
     this.earL.rotation.z = 0.15 + Math.sin(time * 1.3) * 0.1;
     this.earR.rotation.z = -0.15 + Math.sin(time * 1.7 + 2) * 0.1;

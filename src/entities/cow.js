@@ -134,9 +134,9 @@ export class CowRig {
       { z: 0.79, rx: 0.04, ryT: 0.05, ryB: 0.05, y: 0.04 },
     ], 18), M.body);
 
-    // neck / head / jaw
+    // neck / head / jaw — neck hangs forward off the chest
     this.neck = pivot(this.body, 0, 0.12, bull ? 0.58 : 0.52);
-    this.neck.rotation.x = -0.5;
+    this.neck.rotation.x = 0.5;
     // short heavy neck with a dewlap line underneath
     add(this.neck, loftUp([
       { z: -0.05, rx: bull ? 0.24 : 0.20, ryT: 0.26, ryB: bull ? 0.30 : 0.27 },
@@ -145,7 +145,7 @@ export class CowRig {
       { z: 0.40, rx: 0.115, ryT: 0.14, ryB: 0.13 },
     ], 14), M.body);
     this.head = pivot(this.neck, 0, 0.38, 0.02);
-    this.head.rotation.x = 0.95;
+    this.head.rotation.x = -0.05; // rest pitch; animate() drives from here
     // broad brow and cheeks flowing into a wide square muzzle
     add(this.head, loft([
       { z: -0.12, rx: 0.04, ry: 0.045, y: 0.02 },
@@ -232,7 +232,7 @@ export class CowRig {
       this.body.rotation.x = Math.sin(time * f) * 0.09 * k;
       this.body.rotation.z = Math.sin(time * f * 0.8 + 1) * 0.1 * k;
       this.body.position.y = 0.88 + Math.abs(Math.sin(time * f)) * 0.07 * k;
-      this.neck.rotation.x = -0.5 + Math.sin(time * f * 1.1) * 0.3 * k;
+      this.neck.rotation.x = 0.5 + Math.sin(time * f * 1.1) * 0.3 * k;
       this.head.rotation.y = Math.sin(time * f * 0.9) * 0.5 * k;
       this.jaw.rotation.x = 0.3 + Math.sin(time * f * 2) * 0.2;
       for (let i = 0; i < 4; i++) {
@@ -258,13 +258,14 @@ export class CowRig {
     }
 
     if (state === 'graze') {
+      // dip forward and down to the grass
       const g = (Math.sin(time * 0.45 + this.phase) + 1) / 2;
-      this.neck.rotation.x = -0.5 - g * 0.85;
-      this.head.rotation.x = 0.95 + g * 0.4;
+      this.neck.rotation.x = 0.5 + g * 0.85;
+      this.head.rotation.x = -0.05 + g * 0.35;
       this.jaw.rotation.x = g > 0.85 ? Math.sin(time * 8) * 0.12 : 0;
     } else {
-      this.neck.rotation.x = -0.5 + run * 0.25;
-      this.head.rotation.x = 0.95 - run * 0.2;
+      this.neck.rotation.x = 0.5 + run * 0.25;
+      this.head.rotation.x = -0.05 - run * 0.15;
       this.jaw.rotation.x = 0;
     }
     this.earL.rotation.z = Math.sin(time * 1.4 + this.phase) * 0.2;
