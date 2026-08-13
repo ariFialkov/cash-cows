@@ -1,0 +1,16 @@
+{
+  "name": "Cash Cows",
+  "short_name": "Cash Cows",
+  "description": "A casual 3D lasso betting game. Ride, rope, and win.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#2c1a0e",
+  "theme_color": "#2c1a0e",
+  "icons": [
+    { "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
