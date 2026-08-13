@@ -14,7 +14,7 @@ npm run preview    # serve the production build
 npm run icons      # regenerate PWA icons (zero-dep PNG writer)
 ```
 
-The app is a PWA: `manifest.webmanifest` + a cache-first service worker make it
+The app is a PWA: `manifest.json` + a cache-first service worker make it
 installable and playable offline after the first visit.
 
 ## Controls

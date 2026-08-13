@@ -2,7 +2,7 @@
 // network-refresh, so the game keeps working offline after the first visit.
 
 const CACHE = 'cash-cows-v1';
-const CORE = ['./', './index.html', './manifest.webmanifest'];
+const CORE = ['./', './index.html', './manifest.json'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(CORE)).then(() => self.skipWaiting()));
