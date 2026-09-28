@@ -5,8 +5,9 @@ import * as THREE from 'three';
 import { Cow, preloadCows } from './cow.js';
 import { PEN_HALF } from '../world/world.js';
 
-const TARGET_STANDARD = 130;
-const TARGET_SPECIALS = { mystery: 10, offer: 10, crash: 6 };
+const TARGET_STANDARD = 150;
+const TARGET_SPECIALS = { mystery: 12, offer: 12, crash: 7 };
+const PEN_SHARE = 0.55;          // the rest graze the clearings out on the range
 
 export class Herd {
   constructor(scene, world) {
@@ -18,7 +19,8 @@ export class Herd {
     this._seed();
   }
 
-  _randPoint(minFromCenter, avoid, avoidR) {
+  _randPoint(minFromCenter, avoid, avoidR, inPen) {
+    if (this.world.randomPoint) return this.world.randomPoint({ inPen, minFromCenter, avoid, avoidR, margin: 12 });
     for (let tries = 0; tries < 40; tries++) {
       const x = (Math.random() * 2 - 1) * (PEN_HALF - 12);
       const z = (Math.random() * 2 - 1) * (PEN_HALF - 12);
@@ -33,19 +35,24 @@ export class Herd {
     let placed = 0;
     while (placed < TARGET_STANDARD) {
       const herdSize = Math.min(4 + Math.floor(Math.random() * 5), TARGET_STANDARD - placed);
-      const [hx, hz] = this._randPoint(18, null, 0);
+      const inPen = placed < TARGET_STANDARD * PEN_SHARE;
+      const [hx, hz] = this._randPoint(18, null, 0, inPen);
       for (let i = 0; i < herdSize; i++) {
         const a = Math.random() * Math.PI * 2;
         const r = 2 + Math.random() * 7;
-        const x = THREE.MathUtils.clamp(hx + Math.sin(a) * r, -PEN_HALF + 6, PEN_HALF - 6);
-        const z = THREE.MathUtils.clamp(hz + Math.cos(a) * r, -PEN_HALF + 6, PEN_HALF - 6);
+        let x = hx + Math.sin(a) * r, z = hz + Math.cos(a) * r;
+        if (this.world.isOpen && !this.world.isOpen(x, z, 0.8)) { x = hx; z = hz; }
+        else if (inPen) {
+          x = THREE.MathUtils.clamp(x, -PEN_HALF + 6, PEN_HALF - 6);
+          z = THREE.MathUtils.clamp(z, -PEN_HALF + 6, PEN_HALF - 6);
+        }
         this.cows.push(new Cow(this.scene, this.world, 'standard', x, z));
         placed++;
       }
     }
     for (const [kind, n] of Object.entries(TARGET_SPECIALS)) {
       for (let i = 0; i < n; i++) {
-        const [x, z] = this._randPoint(35, null, 0);
+        const [x, z] = this._randPoint(35, null, 0, i < n * PEN_SHARE);
         this.cows.push(new Cow(this.scene, this.world, kind, x, z));
       }
     }
@@ -72,7 +79,7 @@ export class Herd {
         if (counts[k] < n) { kind = k; break; }
       }
       if (kind) {
-        const [x, z] = this._randPoint(20, player.pos, 55);
+        const [x, z] = this._randPoint(20, player.pos, 55, Math.random() < PEN_SHARE);
         this.cows.push(new Cow(this.scene, this.world, kind, x, z));
       }
     }

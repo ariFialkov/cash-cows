@@ -30,7 +30,7 @@ export class Minimap {
     this._sizeDirty = false;
   }
 
-  update(player, cows, bots = []) {
+  update(player, cows, bots = [], world = null) {
     if (this._sizeDirty) this._resize();
     const ctx = this.ctx;
     const S = this.css;
@@ -44,17 +44,44 @@ export class Minimap {
     ctx.arc(C, C, rim, 0, Math.PI * 2);
     ctx.clip();
 
-    // ground + fence
+    // ground
     ctx.fillStyle = 'rgba(22, 14, 5, 0.6)';
     ctx.fillRect(0, 0, S, S);
+    const mx = (x) => C + (x - player.pos.x) * scale;
+    const mz = (z) => C + (z - player.pos.z) * scale;
+
+    // river and creeks
+    if (world && world.rivers) {
+      ctx.strokeStyle = 'rgba(120, 190, 230, 0.75)';
+      ctx.lineCap = 'round';
+      for (const r of world.rivers) {
+        ctx.lineWidth = r.main ? 3 : 1.4;
+        ctx.beginPath();
+        let started = false;
+        for (let i = 0; i < r.path.length; i += 3) {
+          const p = r.path[i];
+          if (Math.abs(p.x - player.pos.x) > RANGE + 30 || Math.abs(p.z - player.pos.z) > RANGE + 30) { started = false; continue; }
+          if (!started) { ctx.moveTo(mx(p.x), mz(p.z)); started = true; } else ctx.lineTo(mx(p.x), mz(p.z));
+        }
+        ctx.stroke();
+      }
+    }
+
+    // pen fence, broken at the open gates
     ctx.strokeStyle = 'rgba(190, 150, 95, 0.8)';
     ctx.lineWidth = 1.5;
-    ctx.strokeRect(
-      C + (-PEN_HALF - player.pos.x) * scale,
-      C + (-PEN_HALF - player.pos.z) * scale,
-      PEN_HALF * 2 * scale,
-      PEN_HALF * 2 * scale
-    );
+    const P = PEN_HALF, gates = (world && world.gates) || [];
+    const gapOn = (axis, plane, along) => gates.some((g) => g.axis === axis && g.P === plane && Math.abs(along - g.at) < 3);
+    ctx.beginPath();
+    for (const [axis, plane] of [['z', -P], ['z', P], ['x', -P], ['x', P]]) {
+      let pen = false;
+      for (let t = -P; t <= P; t += 4) {
+        const x = axis === 'z' ? t : plane, z = axis === 'z' ? plane : t;
+        if (gapOn(axis, plane, t)) { pen = false; continue; }
+        if (!pen) { ctx.moveTo(mx(x), mz(z)); pen = true; } else ctx.lineTo(mx(x), mz(z));
+      }
+    }
+    ctx.stroke();
 
     // cows (screen-up = world -z, so map x = dx, map y = dz)
     for (const cow of cows) {

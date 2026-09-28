@@ -51,13 +51,10 @@ class Bot {
       return loadCowboy(this.cowboyIdx).then((ct) => { if (this.rig === rig) rig.mountCowboy(new SkinnedCowboy(ct, randomOutfit())); });
     }).catch(() => { this.move = { ...DEFAULT_MOVE }; });
 
-    const a = (i / BOT_COUNT) * Math.PI * 2;
-    const r = 60 + Math.random() * 120;
-    this.pos = new THREE.Vector3(
-      THREE.MathUtils.clamp(Math.sin(a) * r, -PEN_HALF + 10, PEN_HALF - 10),
-      0,
-      THREE.MathUtils.clamp(Math.cos(a) * r, -PEN_HALF + 10, PEN_HALF - 10)
-    );
+    // start spread around the pen, a couple out on the range
+    const [sx, sz] = world.randomPoint ? world.randomPoint({ inPen: i < 3, minFromCenter: 40 }) : [0, 0];
+    this.pos = new THREE.Vector3(sx, 0, sz);
+    this._prev = new THREE.Vector3();
     this.heading = Math.random() * Math.PI * 2;
     this.speed = 0;
     this._turnRate = 0;
@@ -80,10 +77,10 @@ class Bot {
   }
 
   _pickWaypoint() {
-    this.wp = [
-      (Math.random() * 2 - 1) * (PEN_HALF - 20),
-      (Math.random() * 2 - 1) * (PEN_HALF - 20),
-    ];
+    // rivals work the pen mostly, but ride out onto the range now and then
+    this.wp = this.world.randomPoint
+      ? this.world.randomPoint({ inPen: Math.random() < 0.6, margin: 20 })
+      : [(Math.random() * 2 - 1) * (PEN_HALF - 20), (Math.random() * 2 - 1) * (PEN_HALF - 20)];
   }
 
   _unclaim() {
@@ -101,6 +98,9 @@ class Bot {
   }
 
   _moveToward(dt, tx, tz, maxSpeed) {
+    const trueDist = Math.hypot(tx - this.pos.x, tz - this.pos.z);
+    // a target across the fence is reached by way of the nearest gate
+    if (this.world.routeTo && maxSpeed > 0) [tx, tz] = this.world.routeTo(this.pos, tx, tz);
     const dx = tx - this.pos.x, dz = tz - this.pos.z;
     const dist = Math.hypot(dx, dz);
     if (dist > 0.5 && maxSpeed > 0) {
@@ -119,17 +119,22 @@ class Bot {
       this.speed = Math.max(0, this.speed - 12 * dt);
       this._turnRate *= 1 - Math.min(1, dt * 8);
     }
-    this.pos.x += Math.sin(this.heading) * this.speed * dt;
-    this.pos.z += Math.cos(this.heading) * this.speed * dt;
-    const B = PEN_HALF - 2;
-    this.pos.x = THREE.MathUtils.clamp(this.pos.x, -B, B);
-    this.pos.z = THREE.MathUtils.clamp(this.pos.z, -B, B);
+    const wade = this.world.waterDepthAt ? 1 - Math.min(0.55, this.world.waterDepthAt(this.pos.x, this.pos.z) * 0.6) : 1;
+    this._prev.copy(this.pos);
+    this.pos.x += Math.sin(this.heading) * this.speed * wade * dt;
+    this.pos.z += Math.cos(this.heading) * this.speed * wade * dt;
+    if (this.world.confine) this.world.confine(this.pos, this._prev, 1.0);
+    else {
+      const B = PEN_HALF - 2;
+      this.pos.x = THREE.MathUtils.clamp(this.pos.x, -B, B);
+      this.pos.z = THREE.MathUtils.clamp(this.pos.z, -B, B);
+    }
     // bots take the same equestrian jumps over rocks/bushes (silently)
     const jumpY = updateJump(this, this.world, dt, false);
     this.pos.y = this.world.heightAt(this.pos.x, this.pos.z) + jumpY;
     this.obj.position.copy(this.pos);
     this.obj.rotation.y = this.heading;
-    return dist;
+    return trueDist;
   }
 
   // ---- the gag: roped off the horse by the player ----

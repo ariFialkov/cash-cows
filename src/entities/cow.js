@@ -352,6 +352,24 @@ export class Cow {
     this.struggleIntensity = 0;
     // bigger cows are a touch slower — herd basics still apply
     this.runSpeed = (kind === 'crash' ? 7.6 : 8.6) - (this.size - 1) * 1.6;
+    this._prev = new THREE.Vector3(x, 0, z);
+  }
+
+  // cattle won't walk into deep water: bend the heading toward the shallower side
+  _avoidWater(dir) {
+    if (!this.world.waterDepthAt) return false;
+    const l = Math.hypot(dir.x, dir.z);
+    if (l < 1e-4) return false;
+    const ux = dir.x / l, uz = dir.z / l;
+    const ahead = this.world.waterDepthAt(this.pos.x + ux * 4, this.pos.z + uz * 4);
+    if (ahead < 0.3) return false;
+    const L = this.world.waterDepthAt(this.pos.x - uz * 4, this.pos.z + ux * 4);
+    const R = this.world.waterDepthAt(this.pos.x + uz * 4, this.pos.z - ux * 4);
+    if (L < 0.3 || R < 0.3) {
+      const s = L <= R ? 1 : -1;
+      dir.x = (ux * 0.3 - uz * s) * l; dir.z = (uz * 0.3 + ux * s) * l;
+    } else { dir.x = -ux * l; dir.z = -uz * l; }
+    return true;
   }
 
   dispose(scene) {
@@ -427,24 +445,37 @@ export class Cow {
 
       // fence awareness: steer along the rails instead of pinning into them —
       // but panicked cows near a chasing rider still get stuck in corners.
-      const M = PEN_HALF - 3.5;
-      if (this.pos.x > M && dir.x > 0) { dir.x *= 0.15; dir.z += Math.sign(dir.z || (Math.random() - 0.5)) * 0.9; }
-      if (this.pos.x < -M && dir.x < 0) { dir.x *= 0.15; dir.z += Math.sign(dir.z || (Math.random() - 0.5)) * 0.9; }
-      if (this.pos.z > M && dir.z > 0) { dir.z *= 0.15; dir.x += Math.sign(dir.x || (Math.random() - 0.5)) * 0.9; }
-      if (this.pos.z < -M && dir.z < 0) { dir.z *= 0.15; dir.x += Math.sign(dir.x || (Math.random() - 0.5)) * 0.9; }
+      // (an open gate is a way out, and they'll take it)
+      let cornered = false;
+      if (this.world.wallSteer) cornered = this.world.wallSteer(this.pos, dir, 3.5);
+      else {
+        const M = PEN_HALF - 3.5;
+        if (this.pos.x > M && dir.x > 0) { dir.x *= 0.15; dir.z += Math.sign(dir.z || (Math.random() - 0.5)) * 0.9; }
+        if (this.pos.x < -M && dir.x < 0) { dir.x *= 0.15; dir.z += Math.sign(dir.z || (Math.random() - 0.5)) * 0.9; }
+        if (this.pos.z > M && dir.z > 0) { dir.z *= 0.15; dir.x += Math.sign(dir.x || (Math.random() - 0.5)) * 0.9; }
+        if (this.pos.z < -M && dir.z < 0) { dir.z *= 0.15; dir.x += Math.sign(dir.x || (Math.random() - 0.5)) * 0.9; }
+        cornered = Math.abs(this.pos.x) > M && Math.abs(this.pos.z) > M;
+      }
+      this._avoidWater(dir);
 
       dir.y = 0;
       if (dir.lengthSq() > 1e-5) targetHeading = Math.atan2(dir.x, dir.z);
       // cornered: both axes pinned and rider close → panic but crawl
-      const cornered = Math.abs(this.pos.x) > M && Math.abs(this.pos.z) > M;
       const urgency = THREE.MathUtils.clamp(1 - (threatD - 4) / (FLEE_R - 4), 0.35, 1);
       targetSpeed = this.runSpeed * urgency * (cornered ? 0.35 : 1);
     } else if (this.state === 'wander') {
       targetHeading = this.wanderDir;
       targetSpeed = 1.3;
-      const M = PEN_HALF - 8;
-      if (Math.abs(this.pos.x) > M || Math.abs(this.pos.z) > M) {
-        targetHeading = Math.atan2(-this.pos.x, -this.pos.z);
+      const dir = new THREE.Vector3(Math.sin(targetHeading), 0, Math.cos(targetHeading));
+      let turned = false;
+      if (this.world.wallSteer) turned = this.world.wallSteer(this.pos, dir, 8) || dir.x !== Math.sin(targetHeading) || dir.z !== Math.cos(targetHeading);
+      else {
+        const M = PEN_HALF - 8;
+        if (Math.abs(this.pos.x) > M || Math.abs(this.pos.z) > M) { dir.set(-this.pos.x, 0, -this.pos.z); turned = true; }
+      }
+      if (this._avoidWater(dir)) turned = true;
+      if (turned && dir.lengthSq() > 1e-5) {
+        targetHeading = Math.atan2(dir.x, dir.z);
         this.wanderDir = targetHeading;
       }
     }
@@ -456,11 +487,15 @@ export class Cow {
     this.heading += THREE.MathUtils.clamp(d, -3.2 * dt, 3.2 * dt);
     this.speed += (targetSpeed - this.speed) * Math.min(1, dt * 4);
 
+    this._prev.copy(this.pos);
     this.pos.x += Math.sin(this.heading) * this.speed * dt;
     this.pos.z += Math.cos(this.heading) * this.speed * dt;
-    const B = PEN_HALF - 1.6;
-    this.pos.x = THREE.MathUtils.clamp(this.pos.x, -B, B);
-    this.pos.z = THREE.MathUtils.clamp(this.pos.z, -B, B);
+    if (this.world.confine) this.world.confine(this.pos, this._prev, 0.9);
+    else {
+      const B = PEN_HALF - 1.6;
+      this.pos.x = THREE.MathUtils.clamp(this.pos.x, -B, B);
+      this.pos.z = THREE.MathUtils.clamp(this.pos.z, -B, B);
+    }
     this._settle(dt);
 
     // animation LOD: distant cows skip rig animation (they're culled or tiny

@@ -505,10 +505,10 @@ export class HorseRider {
 export function updateJump(rider, world, dt, audible) {
   rider.jumpCooldown -= dt;
   if (rider.landT > 0) rider.landT -= dt;
-  if (!rider.jump && rider.jumpCooldown <= 0 && rider.speed > 4.5 && world.obstacles) {
+  if (!rider.jump && rider.jumpCooldown <= 0 && rider.speed > 4.5 && world.obstaclesNear) {
     const fx = Math.sin(rider.heading), fz = Math.cos(rider.heading);
     const look = 1.2 + rider.speed * 0.28;
-    for (const o of world.obstacles) {
+    for (const o of world.obstaclesNear(rider.pos.x, rider.pos.z)) {
       const dx = o.x - rider.pos.x, dz = o.z - rider.pos.z;
       if (dx * dx + dz * dz > look * look) continue;
       const along = dx * fx + dz * fz;            // distance ahead
@@ -570,6 +570,8 @@ export class Player {
     this.jump = null;            // { t, T, h } while airborne
     this.jumpCooldown = 0;
     this.landT = 0;
+    this.waterDepth = 0;
+    this._prev = new THREE.Vector3();
   }
 
   get maxSpeed() { return this.move.maxSpeed; }
@@ -611,13 +613,20 @@ export class Player {
       this._turnRate *= 1 - Math.min(1, dt * 8);
     }
 
-    this.pos.x += Math.sin(this.heading) * this.speed * dt;
-    this.pos.z += Math.cos(this.heading) * this.speed * dt;
+    // wading: deep water drags the pace down
+    this.waterDepth = this.world.waterDepthAt ? this.world.waterDepthAt(this.pos.x, this.pos.z) : 0;
+    const wade = 1 - Math.min(0.55, this.waterDepth * 0.6);
+    this._prev.copy(this.pos);
+    this.pos.x += Math.sin(this.heading) * this.speed * wade * dt;
+    this.pos.z += Math.cos(this.heading) * this.speed * wade * dt;
 
-    // fence bounds
-    const B = PEN_HALF - 1.2;
-    this.pos.x = THREE.MathUtils.clamp(this.pos.x, -B, B);
-    this.pos.z = THREE.MathUtils.clamp(this.pos.z, -B, B);
+    // range bounds, the pen fence (open at the gates), tree trunks and buildings
+    if (this.world.confine) this.world.confine(this.pos, this._prev, 1.0);
+    else {
+      const B = PEN_HALF - 1.2;
+      this.pos.x = THREE.MathUtils.clamp(this.pos.x, -B, B);
+      this.pos.z = THREE.MathUtils.clamp(this.pos.z, -B, B);
+    }
 
     // equestrian jump over rocks and bushes in the path
     const jumpY = updateJump(this, this.world, dt, true);

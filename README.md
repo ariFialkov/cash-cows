@@ -164,12 +164,40 @@ Monte Carlo (2M draws per cow type ⇒ 0.952–0.962 across every type/strategy)
   the horse's head. He looks at the cow he is working and into turns.
 - **Three.js, no external assets** for everything else. The built-in rider
   is a procedurally built, articulated rig used until the cowboy model loads.
-- **Seeded world gen.** Each session rolls a new seed: rolling value-noise
-  terrain, patchy colouring, trees/rocks/bushes, perimeter fence that follows
-  the terrain, drifting clouds, and a grass carpet that re-lays itself around
-  the player. The pen is a 520 m × 520 m free-range enclosure — big enough to
-  feel open, bounded so that cornering cows against the fence stays part of
-  the game.
+- **Seeded world gen: a mountain valley.** Each session rolls a new seed
+  (`?seed=N` pins one) and builds a 1.5 km square heightmap at 2 m texels: a
+  valley running north–south with a river winding down its floor through
+  water gaps in the end ridges, creeks that run from springs in the side
+  hollows down to the river (never climbing, never below their outlet, each
+  cutting its own small hollow), rolling foothills and broad swells, wooded
+  slopes with clearings, grassy balds on the high tops, rock on the steep
+  faces and layered ridges walling the horizon in blue haze. The ranch pen
+  (340 m square, fence following the ground, two gates standing open, a red
+  barn) sits on the valley floor; dirt trails lead out of the gates to a
+  wooden bridge over the river and up to a lookout with a lone big tree.
+  Riders and cattle roam a 1.1 km range around it. Terrain is rendered on the
+  GPU from the height texture — a fine 1.25 m disc that follows the rider over
+  an 8 m far mesh, both displacing a flat grid with the same bilinear fetch
+  the CPU uses for hooves, so ground contact is exact — coloured from a
+  painted map (meadow, forest floor, bald, rock, sand, dirt) with a detail
+  noise tile. Water is a ribbon per river/creek with rippled normals, fresnel
+  and sun glint. The fence is a real obstacle (open at the gates), tree
+  trunks and the barn push bodies out, cattle steer along the rails, take
+  the open gate when fleeing, and won't walk into deep water; horses wade
+  (slower, with spray) or take the bridge. Rival cowboys route through the
+  nearest gate when their target is across the fence. Canopies between the
+  camera and the rider dissolve with a screen-door dither so the woods never
+  hide the horse. The chase camera eases down from 44° to 24° above the
+  horizon as the horse gallops, opening up the ridges and the valley ahead.
+- **Long grass with brushing physics.** Tufts of tapered, curving blades in
+  three variants (tall bare, short and wide, seed-headed) are hashed into
+  2.5 m cells around the rider (two of each per cell, toroidally addressed
+  so tufts keep their state as the window slides) with a sparse ring of big
+  tufts out to 90 m; they sway in the wind on the GPU and fade at the edges.
+  Every near tuft carries a spring: any body moving through the carpet
+  (player, rivals, cattle, a dragged cowboy) pushes the blades over radially
+  and along its motion, and an under-damped spring wobbles them back
+  upright. The grass only reacts — nothing pushes back on the horse.
 - The rope is a per-frame rebuilt CatmullRom tube (80 segments, 8 sides)
   over a 26-particle verlet rope with bending constraints, so it curves
   instead of kinking, and the particles are kept out of the animals by three
@@ -198,7 +226,9 @@ src/
   main.js              game orchestration: states, throw/hook logic, bet flows, camera, stable
   game/economy.js      RTP model, wallet, bet tiers
   game/horses.js       horse types, species catalogue, stats & gait profiles
-  world/world.js       seeded terrain, fence, decor, sky, grass, clouds
+  world/world.js       the range: sky, fence & gates, barn, bridge, woods, collision, spawn sampling
+  world/terrain.js     heightmap generation (valley, river, creeks, trails), GPU terrain, water
+  world/grass.js       blade tufts, wind, brushing springs
   entities/horse.js    procedural rider + virtual horse joints, gaits, jumps, player movement
   entities/horseModel.js  GLB breed loader, coat painter, skeleton retargeting
   entities/cow.js      cow entity, variants, flee/herd AI (+ placeholder rig)

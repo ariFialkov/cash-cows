@@ -3,7 +3,7 @@
 
 import './style.css';
 import * as THREE from 'three';
-import { World, PEN_HALF } from './world/world.js';
+import { World, RANGE_HALF } from './world/world.js';
 import { Player } from './entities/horse.js';
 import { Herd } from './entities/herd.js';
 import { Bots } from './entities/bots.js';
@@ -38,7 +38,12 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 2000);
 
 const wallet = new Wallet();
-const world = new World(scene, (Math.random() * 0xffffffff) >>> 0);
+// ?seed=N pins the range layout (handy for comparing builds); otherwise a fresh valley each session
+const urlSeed = parseInt(new URLSearchParams(location.search).get('seed'), 10);
+// phones and small machines get a thinner grass carpet, fewer backdrop trees and a smaller shadow map
+const lowEnd = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || (navigator.hardwareConcurrency || 8) <= 4;
+const urlQuality = new URLSearchParams(location.search).get('quality');   // ?quality=low|high overrides
+const world = new World(scene, Number.isFinite(urlSeed) ? urlSeed >>> 0 : (Math.random() * 0xffffffff) >>> 0, { quality: urlQuality || (lowEnd ? 'low' : 'high') });
 const player = new Player(scene, world);
 const herd = new Herd(scene, world);
 const lasso = new Lasso(scene, world);
@@ -97,7 +102,14 @@ let transT = 0;
 const transFrom = new THREE.Vector3();
 const transLook = new THREE.Vector3();
 
-const CAM_OFFSET = new THREE.Vector3(0, 11.2, 11.6); // 44° above horizon
+// the camera sits 44° above the horizon at a standstill and eases down toward
+// 24° at a gallop (widening a touch), so the horizon, the ridges and the
+// valley open up ahead as you ride
+const CAM_DIST = 16.1;
+const CAM_PITCH_IDLE = 44 * Math.PI / 180, CAM_PITCH_RUN = 24 * Math.PI / 180;
+const CAM_FOV_IDLE = 50, CAM_FOV_RUN = 55;
+const CAM_OFFSET = new THREE.Vector3(0, Math.sin(CAM_PITCH_IDLE) * CAM_DIST, Math.cos(CAM_PITCH_IDLE) * CAM_DIST);
+let camRun = 0;
 const camLook = new THREE.Vector3();
 
 function applyCustomization() {
@@ -240,7 +252,7 @@ function aimVectorToTarget(dx, dy) {
     aimTarget.x = assistCow.pos.x;
     aimTarget.z = assistCow.pos.z;
   }
-  const B = PEN_HALF - 1;
+  const B = RANGE_HALF - 1;
   aimTarget.x = THREE.MathUtils.clamp(aimTarget.x, -B, B);
   aimTarget.z = THREE.MathUtils.clamp(aimTarget.z, -B, B);
   aimTarget.y = world.heightAt(aimTarget.x, aimTarget.z) + 0.15;
@@ -436,7 +448,7 @@ function updateWrangle(dt, time) {
     away.divideScalar(dist);
     const drag = w.mode === 'crash' ? 0 : 0.7;
     cow.pos.addScaledVector(away, drag * dt);
-    const B = PEN_HALF - 1.6;
+    const B = RANGE_HALF - 1.6;
     cow.pos.x = THREE.MathUtils.clamp(cow.pos.x, -B, B);
     cow.pos.z = THREE.MathUtils.clamp(cow.pos.z, -B, B);
     if (dist > 14) player.pos.addScaledVector(away, (dist - 14) * 4 * dt);
@@ -512,6 +524,13 @@ function updateCamera(dt, time) {
     return;
   }
 
+  const runK = THREE.MathUtils.clamp((player.speed - 2) / (player.maxSpeed - 2), 0, 1);
+  camRun += (runK - camRun) * (1 - Math.exp(-dt * 1.4));
+  const pitch = THREE.MathUtils.lerp(CAM_PITCH_IDLE, CAM_PITCH_RUN, camRun);
+  const dist = CAM_DIST + camRun * 3;
+  CAM_OFFSET.set(0, Math.sin(pitch) * dist, Math.cos(pitch) * dist);
+  const fov = THREE.MathUtils.lerp(CAM_FOV_IDLE, CAM_FOV_RUN, camRun);
+  if (Math.abs(camera.fov - fov) > 0.05) { camera.fov = fov; camera.updateProjectionMatrix(); }
   const goal = new THREE.Vector3().addVectors(player.pos, CAM_OFFSET);
   const goalLook = new THREE.Vector3(player.pos.x, player.pos.y + 1, player.pos.z);
 
@@ -535,6 +554,13 @@ function updateCamera(dt, time) {
   camera.lookAt(camLook);
 }
 
+// jump the chase camera straight to its goal (used by the test harness)
+function snapCamera() {
+  camera.position.addVectors(player.pos, CAM_OFFSET);
+  camLook.set(player.pos.x, player.pos.y + 1, player.pos.z);
+  camera.lookAt(camLook);
+}
+
 // popup floats above the rider (or the crash bull)
 const _proj = new THREE.Vector3();
 function updatePopupAnchor() {
@@ -549,13 +575,59 @@ function updatePopupAnchor() {
 }
 
 // ---------------------------------------------------------------------------
+// Grass brushing: every body moving through the carpet pushes the blades over.
+// Velocities are finite-differenced from last frame's positions.
+
+const movers = [];
+const lastPos = new Map();
+function grassMovers() {
+  movers.length = 0;
+  const add = (key, pos, r, dt) => {
+    const last = lastPos.get(key);
+    let vx = 0, vz = 0;
+    if (last) { vx = (pos.x - last.x) / dt; vz = (pos.z - last.z) / dt; last.x = pos.x; last.z = pos.z; }
+    else lastPos.set(key, { x: pos.x, z: pos.z });
+    movers.push({ x: pos.x, z: pos.z, vx, vz, r });
+  };
+  const dt = Math.max(1e-3, lastDt);
+  add(player, player.pos, 1.15, dt);
+  for (const b of bots.list) {
+    if (Math.abs(b.pos.x - player.pos.x) > 44 || Math.abs(b.pos.z - player.pos.z) > 44) continue;
+    add(b, b.pos, 1.15, dt);
+    if (b.ground && b.ground.pos) add(b.ground, b.ground.pos, 0.8, dt);
+  }
+  for (const c of herd.cows) {
+    if (c.captured || Math.abs(c.pos.x - player.pos.x) > 44 || Math.abs(c.pos.z - player.pos.z) > 44) continue;
+    add(c, c.pos, 0.95, dt);
+    if (movers.length > 40) break;
+  }
+  return movers;
+}
+
+// hooves through the shallows throw up spray
+let splashT = 0;
+const _splash = new THREE.Vector3();
+function updateSplashes(dt) {
+  if (player.waterDepth > 0.12 && player.speed > 2.5) {
+    splashT -= dt;
+    if (splashT <= 0) {
+      splashT = 0.11 - Math.min(0.06, player.speed * 0.004);
+      _splash.set(player.pos.x - Math.sin(player.heading) * 0.6, player.pos.y + player.waterDepth, player.pos.z - Math.cos(player.heading) * 0.6);
+      effects.burst(_splash, 0xd8eef5, 4 + Math.round(player.speed * 0.5), 1.6, 2.4 + player.speed * 0.15);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Main loop
 
 const clock = new THREE.Clock();
 const moveDir = new THREE.Vector3();
+let lastDt = 1 / 60;
 
 function frame() {
   const dt = Math.min(clock.getDelta(), 0.05);
+  lastDt = dt;
   const time = clock.elapsedTime;
 
   // movement: screen up = world -z (camera looks along -z from +z offset)
@@ -580,12 +652,13 @@ function frame() {
   bots.update(dt, player, herd, effects, time);
   updateWrangle(dt, time);
   lasso.update(dt, player, time);
+  updateSplashes(dt);
   effects.update(dt);
-  world.update(player.pos, dt);
+  world.update(player.pos, dt, time, grassMovers(), camera.position);
   updateCamera(dt, time);
   updatePopupAnchor();
   updateFloaters(dt);
-  if (state !== 'menu') minimap.update(player, herd.cows, bots.list);
+  if (state !== 'menu') minimap.update(player, herd.cows, bots.list, world);
 
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
@@ -599,7 +672,7 @@ window.addEventListener('resize', () => {
 });
 
 // debug/testing handle
-window.__cc = { player, herd, wallet, hook, lasso, input, bots, world, showSpecies, getState: () => state, getWrangle: () => wrangle, onLassoLand };
+window.__cc = { player, herd, wallet, hook, lasso, input, bots, world, camera, renderer, snapCamera, showSpecies, getState: () => state, getWrangle: () => wrangle, onLassoLand };
 
 // PWA
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
