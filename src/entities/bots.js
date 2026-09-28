@@ -243,6 +243,9 @@ class Bot {
     }
 
     if (vis) {
+      // the cowboy follows the rope's spin and watches the cow he's working
+      this.rig.lassoAngle = this.lasso.spinAngle;
+      this.rig.lookTarget = this.target && (this.state === 'hunt' || this.state === 'throwing' || this.state === 'wrangle') ? this.target.pos : null;
       this.rig.animate(dt, this.speed, this._turnRate, this.armPose, time);
       applyJumpPose(this);
       this.lasso.update(dt, this, time);

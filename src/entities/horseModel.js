@@ -591,7 +591,11 @@ export class SkinnedHorseRider extends HorseRider {
 
   _animateRider(armPose, time, g) {
     super._animateRider(armPose, time, g);
-    if (this.cowboy) this.cowboy.animate(armPose, time, g);
+    if (this.cowboy) {
+      this.cowboy.animate(armPose, time, g);
+      this._riderDt = this._riderTime === undefined ? 1 / 60 : time - this._riderTime;
+      this._riderTime = time;
+    }
   }
 
   handWorldPos(out) {
@@ -645,6 +649,21 @@ export class SkinnedHorseRider extends HorseRider {
   postPose() {
     if (!this.pose) return;
     applyPose(this, this.pose, this.body.position.y - 1.06, this.body.rotation.z);
-    if (this.cowboy) this.cowboy.pose(this.torso.rotation.x, this.torso.rotation.z, this.rider.position.y - this.riderRestY);
+    if (this.cowboy) {
+      // where to look, in the rider's frame (the rig group's yaw)
+      let look = null;
+      if (this.lookTarget) {
+        look = _look.copy(this.lookTarget).sub(this.group.position);
+        look.applyAxisAngle(WY, -this.group.rotation.y);
+        look.y -= 1.9; // from eye height
+      }
+      this.cowboy.pose({
+        lean: this.torso.rotation.x, roll: this.torso.rotation.z,
+        lift: this.rider.position.y - this.riderRestY,
+        horse: this.pose, speed: this.engine.speedSm, turn: this.engine.leanSm,
+        dt: this._riderDt, lassoAngle: this.lassoAngle ?? null, heading: this.group.rotation.y, look,
+      });
+    }
   }
 }
+const _look = new THREE.Vector3();

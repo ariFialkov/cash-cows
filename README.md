@@ -137,11 +137,20 @@ Monte Carlo (2M draws per cow type ⇒ 0.952–0.962 across every type/strategy)
   The menu picks the player's model; every rival is a random model in a
   random outfit. Outfits are painted into vertex colours by region (hat,
   hair, face, hands, shirt, coat, pants, boots, belt, scarf) from a palette
-  of skin tones, hair and clothing colours. The riding pose is composed from
-  world-axis limb rotations over the T-pose (legs astride, reins hand, lasso
-  arm for rest / spin / throw / pull, curled fingers) and driven by the same
-  torso lean, posting and jump two-point as the built-in rider, which keeps
-  being posed invisibly underneath.
+  of skin tones, hair and clothing colours. The rider is not glued to the
+  saddle: spring-damper states for seat compression, torso pitch and roll
+  integrate the saddle's vertical, fore-aft and lateral accelerations each
+  frame, so landings press him into the seat, acceleration rocks him back,
+  braking and the horse's pitch tip him forward and turns lean him in. Lean
+  is spread up the spine with the head counter-rotating to keep the gaze
+  level, the pelvis and shoulders counter-yaw with the stride, the legs
+  absorb the bob and brace on a pull, and he breathes at rest. Arm work is
+  layered on top with per-bone slerp smoothing: the spin arm circles with
+  the loop's actual spin angle while the torso counter-turns and he watches
+  the loop; the throw whips the arm over the top and forward toward the
+  target with a torso twist, then follows through; the pull braces him back
+  with the arm reaching to the rope and rhythmic tugs; the reins hand follows
+  the horse's head. He looks at the cow he is working and into turns.
 - **Three.js, no external assets** for everything else. The built-in rider
   is a procedurally built, articulated rig used until the cowboy model loads.
 - **Seeded world gen.** Each session rolls a new seed: rolling value-noise

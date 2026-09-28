@@ -536,6 +536,9 @@ function frame() {
     : lasso.state === 'flying' ? 'throw'
     : lasso.state === 'attached' ? 'pull'
     : 'spin';
+  // the cowboy's arm follows the rope's spin; he watches what he's working
+  player.rig.lassoAngle = lasso.spinAngle;
+  player.rig.lookTarget = wrangle ? wrangle.cow.pos : (lasso.state === 'aiming' || lasso.state === 'flying') ? aimTarget : null;
 
   player.update(dt, moveDir, wrangle ? Math.min(strength, 0.6) : strength, time);
   herd.update(dt, player, time, bots.list);

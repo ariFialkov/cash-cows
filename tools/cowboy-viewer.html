@@ -52,9 +52,22 @@ if (stand) {
   rig.mountCowboy(new SkinnedCowboy(ct, outfit));
   scene.add(rig.group);
   const dt = 1 / 120; let t = 0;
-  for (let i = 0; i < 120 * 4; i++) { rig.animate(dt, speed, 0, pose, t); rig.postPose(); t += dt; }
-  const views = [[7.5, 1.4, 0.1], [5.0, 1.8, 5.0], [0.1, 1.5, 7.5]];
-  views.forEach((p, i) => { rig.animate(dt, speed, 0, pose, t); rig.postPose(); t += 0.05; camera.position.set(...p); camera.lookAt(0, 1.2, 0.1); snap(i); });
+  // settle in the 'from' pose, then switch to the requested pose and capture
+  // FR frames across `span` seconds (a filmstrip of the transition / cycle)
+  const from = q.get('from') || 'rest', span = parseFloat(q.get('span') || '0');
+  const look = q.get('look') === '1' ? new THREE.Vector3(3, 0.6, -4) : null;
+  rig.lookTarget = look;
+  let spin = 0;
+  const step = (p) => { spin += dt * 7.5; rig.lassoAngle = spin; rig.animate(dt, speed, 0, p, t); rig.postPose(); t += dt; };
+  for (let i = 0; i < 120 * 4; i++) step(from);
+  const views = span > 0 ? null : [[7.5, 1.4, 0.1], [5.0, 1.8, 5.0], [0.1, 1.5, 7.5]];
+  if (views) {
+    for (let i = 0; i < 120 * 2; i++) step(pose);
+    views.forEach((p, i) => { step(pose); camera.position.set(...p); camera.lookAt(0, 1.2, 0.1); snap(i); });
+  } else {
+    camera.position.set(5.2, 1.9, 4.6); camera.lookAt(0, 1.3, 0.1);
+    for (let i = 0; i < FR; i++) { const until = t + span / FR; while (t < until) step(pose); snap(i); }
+  }
   const hand = rig.handWorldPos(new THREE.Vector3());
   window.__done = { hand: hand.toArray().map((v) => +v.toFixed(2)), paint: paintOutfit.lastInfo };
 }

@@ -159,6 +159,18 @@ function seq(ax1, a1, ax2 = null, a2 = 0, ax3 = null, a3 = 0) {
   return _qa;
 }
 
+// Rider dynamics: the cowboy is not glued to the saddle. A few spring-damper
+// states (seat compression, torso pitch, torso roll) integrate the saddle's
+// vertical / fore-aft / lateral accelerations each frame, so landings press
+// him into the seat, acceleration rocks him back, braking and the horse's
+// pitch tip him forward, and turns lean him in. Lean is spread up the spine
+// with the head counter-rotating to keep the gaze level, the pelvis and
+// shoulder girdle counter-yaw with the stride, and the legs absorb the bob.
+// Arm work (rest / spin / throw / pull) is layered on top with per-bone
+// slerp smoothing so pose changes never pop.
+const smooth01 = (t) => { t = THREE.MathUtils.clamp(t, 0, 1); return t * t * (3 - 2 * t); };
+const _d = new THREE.Vector3(), _axis = new THREE.Vector3(), _qt = new THREE.Quaternion(), _qw = new THREE.Quaternion();
+
 export class SkinnedCowboy {
   constructor(template, outfit) {
     this.template = template;
@@ -178,67 +190,192 @@ export class SkinnedCowboy {
     const p = new THREE.Vector3();
     this.model.updateMatrixWorld(true);
     hips.getWorldPosition(p);
-    this.model.position.set(-p.x, -p.y + 0.02, -p.z);
+    this.seatOffset = new THREE.Vector3(-p.x, -p.y + 0.02, -p.z);
+    this.model.position.copy(this.seatOffset);
     this._state = { armPose: 'rest', time: 0, run: 0, P: 0, gallopW: 0, trotW: 0 };
-    this.pose(0, 0, 0);
+    this.dyn = {
+      seat: 0, seatV: 0, pitch: 0, pitchV: 0, roll: 0, rollV: 0,
+      lastY: null, vy: 0, ay: 0, lastSpeed: null, ax: 0,
+      arm: 'rest', armT: 0, tugPhase: Math.random() * 6, headYaw: 0, headPitch: 0,
+      seed: Math.random() * 100,
+    };
+    this.q = new Map(); // per-bone current world-frame rotation (smoothed)
+    this.pose({ lean: 0.08, roll: 0, lift: 0, horse: null, speed: 0, turn: 0, dt: 1 / 60, lassoAngle: null, heading: 0, look: null });
   }
 
   repaint() { paintOutfit(this.mesh, this.outfit, this.cowboy, this.template); }
   setShirt(hex) { this.outfit.shirt = hex; this.repaint(); }
 
-  // lean: torso pitch (rad, + forward); roll: torso roll; lift: posting rise (m)
-  pose(lean, roll, lift) {
-    const { armPose, time, run, P } = this._state;
-    const g = this.group;
-    g.position.y = lift;
-    const set = (name, q) => setBoneWorldRot(this, 'smartrig' + name, q);
+  animate(armPose, time, g) { Object.assign(this._state, { armPose, time }, g); }
 
-    // spine: lean forward from the waist, head counters, slight roll
-    set('Spine', seq(X, lean * 0.35, Z, roll * 0.5));
-    set('Spine1', seq(X, lean * 0.4, Z, roll * 0.5));
-    set('Spine2', seq(X, lean * 0.25));
-    set('Neck', seq(X, -lean * 0.45));
-    set('Head', seq(X, -lean * 0.35 + run * 0.1));
+  // args: lean/roll (the built-in rider's torso pitch + roll), lift (posting
+  // rise, m), horse (gait pose or null), speed, turn (rad/s lean input),
+  // dt, lassoAngle (world spin angle of the loop), heading (rig yaw),
+  // look (direction to look, rider-local, or null)
+  pose(args) {
+    const { armPose, time, run, P, gallopW, trotW } = this._state;
+    const D = this.dyn;
+    const horse = args.horse;
+    const dt = THREE.MathUtils.clamp(args.dt || 1 / 60, 1e-3, 0.05);
+    const walkW = horse ? Math.max(0, 1 - trotW - gallopW - (horse.run < 0.05 ? 1 : 0)) : 0;
+    const n = (k) => Math.sin(time * 0.37 * k + D.seed * k) * 0.5 + Math.sin(time * 0.91 * k + D.seed) * 0.5; // slow wobble
 
-    // legs astride: thighs forward and out, knees bent, heels down
-    for (const [side, s] of [['Left', 1], ['Right', -1]]) {
-      set(side + 'UpLeg', seq(X, -1.25, Z, s * 0.42));
-      set(side + 'Leg', seq(X, 1.35));
-      set(side + 'Foot', seq(X, 0.15));
-      set(side + 'ToeBase', seq(X, 0));
+    // ---- saddle forces ----
+    const bodyY = horse ? horse.bodyY : 0;
+    if (D.lastY === null) D.lastY = bodyY;
+    const vy = (bodyY - D.lastY) / dt;
+    const ayRaw = (vy - D.vy) / dt;
+    D.ay += (THREE.MathUtils.clamp(ayRaw, -60, 60) - D.ay) * Math.min(1, dt * 25);
+    D.vy = vy; D.lastY = bodyY;
+    if (D.lastSpeed === null) D.lastSpeed = args.speed;
+    D.ax += (THREE.MathUtils.clamp((args.speed - D.lastSpeed) / dt, -25, 25) - D.ax) * Math.min(1, dt * 8);
+    D.lastSpeed = args.speed;
+
+    // ---- spring states (2 substeps for stability) ----
+    const h = dt / 2;
+    const horsePitch = horse ? horse.pitch : 0;
+    const horseRoll = horse ? horse.roll : 0;
+    const armT = D.armT;
+    let pitchT = args.lean + horsePitch * 0.45 - D.ax * 0.045;
+    let rollT = horseRoll * 0.35 - args.turn * 0.09;
+    let seatT = 0;
+    // arm-work body language feeds the targets below
+    if (armPose === 'throw') pitchT += 0.28 * smooth01(armT / 0.12) * (1 - 0.6 * smooth01((armT - 0.25) / 0.45));
+    if (armPose === 'pull') pitchT -= 0.22;
+    if (armPose === 'spin') pitchT -= 0.05;
+    for (let i = 0; i < 2; i++) {
+      // seat: rider inertia lags the saddle's vertical acceleration
+      const seatA = -520 * (D.seat - seatT) - 28 * D.seatV - D.ay * 0.9;
+      D.seatV += seatA * h; D.seat += D.seatV * h;
+      const pitchA = -150 * (D.pitch - pitchT) - 21 * D.pitchV;
+      D.pitchV += pitchA * h; D.pitch += D.pitchV * h;
+      const rollA = -110 * (D.roll - rollT) - 17 * D.rollV;
+      D.rollV += rollA * h; D.roll += D.rollV * h;
     }
+    D.seat = THREE.MathUtils.clamp(D.seat, -0.05, 0.04);
+    const pitch = D.pitch, roll = D.roll;
 
-    // left arm: reins
-    set('LeftArm', seq(Z, -1.25, X, -0.55));
-    set('LeftForeArm', seq(X, -1.15, Y, 0.3));
-    set('LeftHand', seq(X, -0.2));
-    // right arm: lasso poses (mirrors the procedural rider's)
-    if (armPose === 'spin') {
-      const t = time * 9;
-      set('RightArm', seq(Z, -1.55 + Math.cos(t) * 0.1, X, Math.sin(t) * 0.12));
-      set('RightForeArm', seq(X, -0.35 + Math.sin(t) * 0.15, Y, Math.cos(t) * 0.15));
-      set('RightHand', seq(X, -0.3));
-    } else if (armPose === 'throw') {
-      set('RightArm', seq(Z, -0.7, X, -1.0));
-      set('RightForeArm', seq(X, -0.2));
-      set('RightHand', seq(X, -0.2));
-    } else if (armPose === 'pull') {
-      set('RightArm', seq(Z, 1.0, X, -0.95 + Math.sin(time * 6) * 0.08));
-      set('RightForeArm', seq(X, -1.2 + Math.sin(time * 6 + 1) * 0.1));
-      set('RightHand', seq(X, -0.3));
+    // ---- arm pose timing ----
+    if (armPose !== D.arm) { D.arm = armPose; D.armT = 0; } else D.armT += dt;
+    const T = D.armT;
+    // pull: rhythmic tugs against the rope (a little irregular)
+    D.tugPhase += dt * (2 * Math.PI) * (1.5 + n(1) * 0.25);
+    const tug = armPose === 'pull' ? Math.pow(Math.max(0, Math.sin(D.tugPhase)), 2) * smooth01(T / 0.4) : 0;
+
+    // ---- look direction: torso helps the head; lag on the head ----
+    let lookYaw = 0, lookPitch = 0;
+    if (args.look) {
+      lookYaw = Math.atan2(args.look.x, args.look.z);
+      lookPitch = -Math.atan2(args.look.y, Math.hypot(args.look.x, args.look.z));
     } else {
-      set('RightArm', seq(Z, 1.2, X, -0.5 + Math.sin(P) * 0.05 * run));
-      set('RightForeArm', seq(X, -1.05));
-      set('RightHand', seq(X, -0.2));
+      lookYaw = THREE.MathUtils.clamp(args.turn * 0.35, -0.5, 0.5) + n(0.3) * 0.12 * (1 - run);
+      lookPitch = n(0.5) * 0.05;
     }
-    // fingers curled into a loose grip
+    if (armPose === 'spin') { lookPitch -= 0.18; lookYaw += Math.cos((args.lassoAngle ?? time * 7.5) + args.heading) * 0.06; }
+    lookYaw = THREE.MathUtils.clamp(lookYaw, -1.6, 1.6);
+    const torsoYaw = THREE.MathUtils.clamp(lookYaw * 0.35, -0.45, 0.45);
+    D.headYaw += (THREE.MathUtils.clamp(lookYaw - torsoYaw, -0.9, 0.9) - D.headYaw) * Math.min(1, dt * 7);
+    D.headPitch += (lookPitch - D.headPitch) * Math.min(1, dt * 7);
+
+    // ---- gait rhythm in the trunk ----
+    const gaitW = walkW * 0.7 + trotW + gallopW * 0.6;
+    const pelvisYaw = Math.sin(P) * 0.045 * gaitW;
+    const pelvisRoll = -Math.sin(P) * 0.03 * walkW;
+    const breathe = Math.sin(time * 1.3 + D.seed) * 0.012 * (1 - run * 0.5);
+
+    // seat: posting lift + spring compression
+    this.group.position.y = args.lift + D.seat * 0.6;
+    this.model.position.copy(this.seatOffset);
+
+    const set = (name, q, rate = 14) => {
+      let cur = this.q.get(name);
+      if (!cur) { cur = q.clone(); this.q.set(name, cur); }
+      else cur.slerp(q, 1 - Math.exp(-rate * dt));
+      setBoneWorldRot(this, 'smartrig' + name, cur);
+    };
+
+    // ---- spine chain: pelvis tilt, lumbar, thoracic; head stabilised ----
+    let spinYaw = 0, spinRoll = 0;
+    if (armPose === 'spin') {
+      const phi = (args.lassoAngle ?? time * 7.5) + args.heading;
+      spinYaw = -Math.sin(phi) * 0.07;
+      spinRoll = Math.cos(phi) * 0.035;
+    }
+    let throwYaw = 0;
+    if (armPose === 'throw') throwYaw = -0.22 * smooth01(T / 0.14) * (1 - 0.75 * smooth01((T - 0.3) / 0.5));
+    const pullYaw = armPose === 'pull' ? 0.12 : 0;
+    set('Hips', seq(X, -D.seat * 1.5, Y, pelvisYaw, Z, pelvisRoll), 30);
+    set('Spine', seq(X, pitch * 0.32, Y, -pelvisYaw * 0.5 + torsoYaw * 0.3, Z, roll * 0.45 + spinRoll), 30);
+    set('Spine1', seq(X, pitch * 0.38 + breathe, Y, -pelvisYaw * 0.6 + torsoYaw * 0.4 + spinYaw + throwYaw + pullYaw, Z, roll * 0.4), 30);
+    set('Spine2', seq(X, pitch * 0.22 + breathe * 0.6, Y, torsoYaw * 0.3 + spinYaw * 0.6 + throwYaw * 0.6, Z, roll * 0.15 + spinRoll * 0.5), 30);
+    set('Neck', seq(X, -pitch * 0.42 + D.headPitch * 0.35, Y, D.headYaw * 0.4), 30);
+    set('Head', seq(X, -pitch * 0.4 + D.headPitch * 0.65 + run * 0.06, Y, D.headYaw * 0.6, Z, -roll * 0.5 - D.headYaw * 0.06), 30);
+
+    // ---- legs: absorb the bob, brace on a pull, half-seat at the gallop ----
+    const absorb = -D.seat * 4 + gallopW * 0.08 * Math.cos(P - 0.4);
+    const brace = tug * 0.25;
+    for (const [side, s] of [['Left', 1], ['Right', -1]]) {
+      set(side + 'UpLeg', seq(X, -1.25 + pitch * 0.25 - absorb * 0.35 + brace * 0.2, Z, s * (0.42 + absorb * 0.1)), 30);
+      set(side + 'Leg', seq(X, 1.35 + absorb * 0.9 - brace * 0.5), 30);
+      set(side + 'Foot', seq(X, 0.15 + absorb * 0.4 + brace * 0.3), 30);
+      set(side + 'ToeBase', seq(X, 0), 30);
+    }
+
+    // ---- left arm: reins, following the horse's head ----
+    const neck = horse ? horse.neck : 0;
+    const reinTight = armPose === 'pull' ? 0.3 : 0;
+    set('LeftShoulder', seq(X, 0, Y, 0, Z, spinRoll * 0.5), 20);
+    set('LeftArm', seq(Z, -1.22 - roll * 0.25 + reinTight * 0.15, X, -0.55 - neck * 0.35 - run * 0.15 + Math.sin(P) * 0.03 * gaitW), 20);
+    set('LeftForeArm', seq(X, -1.12 + neck * 0.3 - reinTight, Y, 0.3), 20);
+    set('LeftHand', seq(X, -0.2 - reinTight * 0.4), 20);
+
+    // ---- right arm: the lasso ----
+    if (armPose === 'spin') {
+      // the hand circles with the loop: raised arm swung round a cone
+      const phi = (args.lassoAngle ?? time * 7.5) + args.heading;
+      _d.set(Math.cos(phi), 0, Math.sin(phi));
+      _axis.set(_d.z, 0, -_d.x).normalize();
+      _qt.setFromAxisAngle(_axis, 0.24);
+      _qw.copy(seq(Z, -1.5, X, 0.12)).premultiply(_qt);
+      set('RightShoulder', seq(Z, 0.12, X, -0.05), 16);
+      set('RightArm', _qw, 16);
+      set('RightForeArm', seq(X, -0.4 + Math.sin(phi + 0.9) * 0.2, Y, Math.cos(phi + 0.9) * 0.18), 16);
+      set('RightHand', seq(X, -0.35 + Math.sin(phi + 1.6) * 0.3, Z, Math.cos(phi + 1.6) * 0.22), 16);
+    } else if (armPose === 'throw') {
+      // release: the arm comes over the top from the spin and whips forward,
+      // extending; then it follows through down and settles pointing after
+      // the loop. Parametrised as the lowered arm swung about the lateral
+      // axis so the path goes up -> forward -> down, never out to the side.
+      const rel = smooth01(T / 0.15), fol = smooth01((T - 0.18) / 0.55);
+      const swing = THREE.MathUtils.lerp(-2.85, -1.45, rel) + fol * 0.6;      // -pi = straight up, -pi/2 = forward
+      const yawTo = THREE.MathUtils.clamp(lookYaw, -0.6, 0.6) * rel;          // toward the target
+      set('RightShoulder', seq(X, -0.12 * rel * (1 - fol * 0.6), Y, -0.12 * rel), 24);
+      set('RightArm', seq(Z, 1.3, X, swing, Y, yawTo), T < 0.25 ? 30 : 12);
+      set('RightForeArm', seq(X, THREE.MathUtils.lerp(-0.55, -0.06, rel) - fol * 0.4), T < 0.25 ? 30 : 12);
+      set('RightHand', seq(X, -0.3 + fol * 0.1, Y, -0.15 * rel), 20);
+    } else if (armPose === 'pull') {
+      // braced back against the rope: the arm reaches toward the rope,
+      // elbow bent, rhythmic tugs pulling the rope in to the chest
+      const toRope = THREE.MathUtils.clamp(lookYaw, -1.2, 1.2);
+      set('RightShoulder', seq(X, 0.1 + tug * 0.12, Y, 0.15 + toRope * 0.15), 14);
+      set('RightArm', seq(Z, 1.0, X, 0.45 + tug * 0.28 + n(2) * 0.04, Y, toRope * 0.55), 14);
+      set('RightForeArm', seq(X, -0.95 - tug * 0.45, Y, -0.15), 14);
+      set('RightHand', seq(X, -0.35 - tug * 0.2), 14);
+    } else {
+      // rest: hand on the thigh, loose, swaying a touch with the stride
+      set('RightShoulder', seq(X, 0), 10);
+      set('RightArm', seq(Z, 1.18 + n(3) * 0.03, X, -0.42 - neck * 0.15 + Math.sin(P) * 0.04 * gaitW), 10);
+      set('RightForeArm', seq(X, -0.95 + Math.cos(P) * 0.03 * gaitW), 10);
+      set('RightHand', seq(X, -0.2), 10);
+    }
+    // fingers: a loose grip, tighter on the rope
+    const grip = armPose === 'pull' ? 0.85 + tug * 0.15 : armPose === 'throw' ? 0.35 : 0.6;
     for (const [side, s] of [['Left', -1], ['Right', 1]]) {
-      for (const f of ['Index', 'Middle', 'Ring', 'Pinky']) for (let k = 1; k <= 3; k++) set(`${side}Hand${f}${k}`, seq(Z, s * 0.55));
-      for (let k = 1; k <= 3; k++) set(`${side}HandThumb${k}`, seq(Y, s * -0.3));
+      const g = side === 'Left' ? 0.6 + reinTight * 0.4 : grip;
+      for (const f of ['Index', 'Middle', 'Ring', 'Pinky']) for (let k = 1; k <= 3; k++) set(`${side}Hand${f}${k}`, seq(Z, s * g), 18);
+      for (let k = 1; k <= 3; k++) set(`${side}HandThumb${k}`, seq(Y, s * -0.3), 18);
     }
   }
-
-  animate(armPose, time, g) { Object.assign(this._state, { armPose, time }, g); }
 
   handWorldPos(out) {
     return this.bones.smartrigRightHand.getWorldPosition(out);
