@@ -132,8 +132,18 @@ Monte Carlo (2M draws per cow type ⇒ 0.952–0.962 across every type/strategy)
   shared with the template, so a 156-head herd costs one skinned draw per cow.
   The loader also fixes a rig quirk: the cow's belly was skinned to its head
   bone, so those vertices are handed back to the chest and pelvis by position.
-- **Three.js, no external assets** for everything else. The rider is a
-  procedurally built, articulated rig with code-driven arm poses and posting.
+- **Rigged cowboys.** Three rigged humanoid models (`cowboy1..3.glb`:
+  Ranger, Drifter in a duster, Wrangler in chaps) ride the skinned horses.
+  The menu picks the player's model; every rival is a random model in a
+  random outfit. Outfits are painted into vertex colours by region (hat,
+  hair, face, hands, shirt, coat, pants, boots, belt, scarf) from a palette
+  of skin tones, hair and clothing colours. The riding pose is composed from
+  world-axis limb rotations over the T-pose (legs astride, reins hand, lasso
+  arm for rest / spin / throw / pull, curled fingers) and driven by the same
+  torso lean, posting and jump two-point as the built-in rider, which keeps
+  being posed invisibly underneath.
+- **Three.js, no external assets** for everything else. The built-in rider
+  is a procedurally built, articulated rig used until the cowboy model loads.
 - **Seeded world gen.** Each session rolls a new seed: rolling value-noise
   terrain, patchy colouring, trees/rocks/bushes, perimeter fence that follows
   the terrain, drifting clouds, and a grass carpet that re-lays itself around
@@ -159,6 +169,7 @@ src/
   entities/horseModel.js  GLB breed loader, coat painter, skeleton retargeting
   entities/cow.js      cow entity, variants, flee/herd AI (+ placeholder rig)
   entities/cowModel.js rigged cattle: bovine gait profile, hides, graze/struggle/stomp
+  entities/cowboyModel.js rigged cowboys: outfit painter, riding pose, lasso arm poses
   entities/herd.js     spawning & population upkeep
   entities/bots.js     rival cowboys (simulated multiplayer)
   lasso/lasso.js       verlet rope + dynamic loop
@@ -166,6 +177,6 @@ src/
   ui/ui.js             menu, stable storefront, HUD, toasts, rider popups
   ui/minimap.js        radar minimap
   core/                rng & noise, loft geometry, particles, WebAudio sfx
-public/models/         compressed horse + cattle GLBs (built from models-src/*.fbx)
+public/models/         compressed horse, cattle + cowboy GLBs (built from models-src/*.fbx)
 tools/                 model pipeline (FBX → GLB), rig inspector, gait/cow filmstrip viewers, icon generator
 ```

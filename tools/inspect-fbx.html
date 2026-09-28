@@ -1,0 +1,43 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<script type="importmap">
+{ "imports": { "three": "/node_modules/three/build/three.module.js",
+               "three/addons/": "/node_modules/three/examples/jsm/" } }
+</script></head><body><script type="module">
+// Dev tool: loads models-src/<m>.fbx and dumps its object tree, materials,
+// textures (embedded or not), skeleton and animations. Query: ?m=cowboy1
+import * as THREE from 'three';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+const name = new URLSearchParams(location.search).get('m');
+new FBXLoader().load(`/models-src/${name}.fbx`, (root) => {
+  root.updateMatrixWorld(true);
+  const out = { objects: [], materials: [], animations: root.animations.map((a) => ({ name: a.name, duration: a.duration, tracks: a.tracks.length })), bones: [] };
+  const seenMat = new Set();
+  root.traverse((o) => {
+    const e = { type: o.type, name: o.name };
+    if (o.isMesh) {
+      const g = o.geometry;
+      e.verts = g.attributes.position.count; e.uv = !!g.attributes.uv; e.skinned = !!o.isSkinnedMesh;
+      e.groups = g.groups.length;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      e.materials = mats.map((m) => m.name);
+      for (const m of mats) {
+        if (seenMat.has(m)) continue; seenMat.add(m);
+        const tex = m.map;
+        out.materials.push({ name: m.name, color: m.color ? '#' + m.color.getHexString() : null, map: tex ? { hasImage: !!tex.image, w: tex.image?.width, h: tex.image?.height, src: (tex.image?.src || tex.name || '').slice(0, 80) } : null });
+      }
+      g.computeBoundingBox();
+      const bb = new THREE.Box3().setFromObject(o);
+      e.bbox = [bb.min.toArray().map((x) => +x.toFixed(3)), bb.max.toArray().map((x) => +x.toFixed(3))];
+    }
+    if (o.isBone) {
+      const p = new THREE.Vector3(); o.getWorldPosition(p);
+      let depth = 0, q = o; while (q.parent && q.parent.isBone) { depth++; q = q.parent; }
+      out.bones.push({ name: o.name, depth, pos: p.toArray().map((x) => +x.toFixed(3)) });
+    }
+    if (o.isMesh || o.isGroup || o.type === 'Object3D') out.objects.push(e);
+  });
+  window.__out = out;
+  document.title = 'done';
+}, undefined, (err) => { window.__out = { error: String(err) }; document.title = 'done'; });
+</script></body></html>

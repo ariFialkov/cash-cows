@@ -10,6 +10,7 @@ import { PEN_HALF } from '../world/world.js';
 import { LASSO_TIERS, drawOutcome, round2 } from '../game/economy.js';
 import { HORSE_SPECIES, speciesStats, movementParams } from '../game/horses.js';
 import { loadHorseType, SkinnedHorseRider } from './horseModel.js';
+import { COWBOYS, loadCowboy, SkinnedCowboy, randomOutfit } from './cowboyModel.js';
 
 const NAMES = ['Dusty', 'Big Tex', 'Maribel', 'Cactus Joe', 'Sundown'];
 const BOT_COUNT = 5;
@@ -36,6 +37,8 @@ class Bot {
     // every rival rides a real breed, with that breed's movement stats
     this.species = pickSpecies();
     this.move = movementParams(speciesStats(this.species));
+    // ...and is one of the three cowboys in a random outfit
+    this.cowboyIdx = (Math.random() * COWBOYS.length) | 0;
     loadHorseType(this.species.type).then((template) => {
       const rig = new SkinnedHorseRider(template, this.species, (i + 2) % 4);
       rig.phase = this.rig.phase;
@@ -45,6 +48,7 @@ class Bot {
       this.obj.position.copy(this.pos);
       this.obj.rotation.y = this.heading;
       this.scene.add(this.obj);
+      return loadCowboy(this.cowboyIdx).then((ct) => { if (this.rig === rig) rig.mountCowboy(new SkinnedCowboy(ct, randomOutfit())); });
     }).catch(() => { this.move = { ...DEFAULT_MOVE }; });
 
     const a = (i / BOT_COUNT) * Math.PI * 2;

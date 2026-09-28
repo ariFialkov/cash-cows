@@ -15,6 +15,8 @@ import { UI, tmpl } from './ui/ui.js';
 import { Minimap } from './ui/minimap.js';
 import { getSpecies, speciesStats, movementParams } from './game/horses.js';
 import { loadHorseType, SkinnedHorseRider } from './entities/horseModel.js';
+import { loadCowboy, SkinnedCowboy, playerOutfit } from './entities/cowboyModel.js';
+import { COWBOY_COLORS } from './entities/horse.js';
 import {
   Wallet, LASSO_TIERS, fmt, round2, winProbForMultiplier,
   drawOutcome, drawOffer, drawCrashPoint, crashMultAt,
@@ -99,12 +101,26 @@ const CAM_OFFSET = new THREE.Vector3(0, 11.2, 11.6); // 44° above horizon
 const camLook = new THREE.Vector3();
 
 function applyCustomization() {
-  player.rig.setColors(0, wallet.custom.cowboy);
+  player.rig.setColors(0, wallet.custom.shirt);
   lasso.setColor(LASSO_TIERS[wallet.custom.lasso].color);
   ui.refreshBet();
 }
 applyCustomization();
 ui.showMenu();
+
+// ---- the player's cowboy: the picked model in the saddle ----
+let dressToken = 0;
+async function dressPlayer(rig) {
+  const token = ++dressToken;
+  const idx = wallet.custom.cowboy;
+  try {
+    const ct = await loadCowboy(idx);
+    if (token !== dressToken || !rig.mountCowboy) return;
+    rig.mountCowboy(new SkinnedCowboy(ct, playerOutfit(idx, COWBOY_COLORS[wallet.custom.shirt].shirt)));
+  } catch (err) {
+    console.warn('cowboy model failed to load, keeping the built-in rider', err);
+  }
+}
 
 // ---- horse breeds: load the equipped species' model and mount the rider ----
 let shownSpecies = null;
@@ -116,11 +132,12 @@ async function showSpecies(id) {
   try {
     const template = await loadHorseType(species.type);
     if (token !== equipToken) return; // superseded by a newer request
-    const rig = new SkinnedHorseRider(template, species, wallet.custom.cowboy);
+    const rig = new SkinnedHorseRider(template, species, wallet.custom.shirt);
     rig.phase = player.rig.phase;
     rig.speedSm = player.rig.speedSm;
     player.setRig(rig);
     shownSpecies = species.id;
+    dressPlayer(rig);
   } catch (err) {
     console.warn('horse model failed to load, keeping the built-in horse', err);
   }
@@ -167,6 +184,7 @@ ui.onCustomize = (kind, i) => {
   wallet.custom[kind] = i;
   wallet.save();
   applyCustomization();
+  if (kind === 'cowboy') dressPlayer(player.rig);
 };
 
 ui.onStart = () => {

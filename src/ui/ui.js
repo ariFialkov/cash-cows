@@ -3,6 +3,7 @@
 
 import { LASSO_TIERS, fmt } from '../game/economy.js';
 import { COWBOY_COLORS } from '../entities/horse.js';
+import { COWBOYS } from '../entities/cowboyModel.js';
 import { HORSE_TYPES, HORSE_SPECIES, RARITY, speciesStats, getSpecies } from '../game/horses.js';
 
 const $ = (id) => document.getElementById(id);
@@ -63,9 +64,25 @@ export class UI {
     });
   }
 
+  _pickRow(rowEl, items, kind, selected) {
+    rowEl.innerHTML = '';
+    items.forEach((item, i) => {
+      const el = document.createElement('button');
+      el.className = 'pick' + (i === selected ? ' sel' : '');
+      el.textContent = item.name;
+      el.addEventListener('click', () => {
+        rowEl.querySelectorAll('.pick').forEach((s) => s.classList.remove('sel'));
+        el.classList.add('sel');
+        this.onCustomize?.(kind, i);
+      });
+      rowEl.appendChild(el);
+    });
+  }
+
   _buildSwatches() {
     const c = this.wallet.custom;
-    this._swatchRow($('cowboy-swatches'), COWBOY_COLORS, 'cowboy', (i) => i.shirt, c.cowboy, false);
+    this._pickRow($('cowboy-picks'), COWBOYS, 'cowboy', c.cowboy);
+    this._swatchRow($('cowboy-swatches'), COWBOY_COLORS, 'shirt', (i) => i.shirt, c.shirt, false);
     this._swatchRow($('lasso-swatches'), LASSO_TIERS, 'lasso', (i) => i.color, c.lasso, true);
     this.refreshHorseName();
   }

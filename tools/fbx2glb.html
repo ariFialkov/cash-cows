@@ -16,7 +16,7 @@ new FBXLoader().load(`/models-src/${name}.fbx`, (root) => {
   // strip the dead texture reference; materials get rebuilt in-game anyway
   root.traverse((o) => {
     if (o.isMesh) {
-      o.material = new THREE.MeshStandardMaterial({ name: 'horse', color: 0xffffff });
+      o.material = new THREE.MeshStandardMaterial({ name: 'model', color: 0xffffff });
       o.geometry.deleteAttribute('color');
     }
   });

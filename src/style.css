@@ -293,6 +293,12 @@ body.touch-mode #joystick-base { display: block; }
 .custom-label { font-weight: 800; font-size: 15px; text-align: left; }
 .custom-label small { font-weight: 500; opacity: .7; display: block; font-size: 11px; }
 
+.pick-row { display: flex; gap: 6px; }
+.pick {
+  padding: 6px 10px; border-radius: 10px; border: 2px solid rgba(255,255,255,.18);
+  background: rgba(0,0,0,.28); color: #fff; font: inherit; font-weight: 700; font-size: 12px; cursor: pointer;
+}
+.pick.sel { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(242, 182, 50, .35); }
 .swatch-row { display: flex; gap: 8px; }
 .swatch {
   width: 34px; height: 34px;

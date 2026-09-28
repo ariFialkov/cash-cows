@@ -62,7 +62,7 @@ loader.load(`/public/models/${name}.glb`, (g) => {
   // render side / front / top
   const c = bb.getCenter(new THREE.Vector3()), s = bb.getSize(new THREE.Vector3());
   const R = Math.max(s.x, s.y, s.z) * 1.1;
-  const cam = new THREE.PerspectiveCamera(30, W / H, 0.01, 100);
+  const cam = new THREE.PerspectiveCamera(30, W / H, R * 0.05, R * 20);
   renderer.setScissorTest(true);
   const views = [[R * 3.8, 0, 0], [0, 0, R * 3.8], [0, R * 3.8, 0.001]];
   views.forEach((pos, i) => {

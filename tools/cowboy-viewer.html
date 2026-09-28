@@ -1,0 +1,62 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>cowboy viewer</title>
+<style>body{margin:0;background:#9fb8c8}canvas{display:block}</style></head>
+<body>
+<script type="module">
+// Dev tool: renders a skinned cowboy, either standing in its bind pose
+// (?stand=1, front/side/back, ?debug=1 colours by bone group) or mounted on
+// a horse in the riding pose (?species=quarter&pose=spin&speed=4).
+import * as THREE from 'three';
+import { getSpecies } from '/src/game/horses.js';
+import { loadHorseType, SkinnedHorseRider } from '/src/entities/horseModel.js';
+import { loadCowboy, SkinnedCowboy, randomOutfit, playerOutfit, paintOutfit } from '/src/entities/cowboyModel.js';
+
+const q = new URLSearchParams(location.search);
+const idx = parseInt(q.get('cowboy') || '0');
+const stand = q.get('stand') === '1';
+const debug = q.get('debug') === '1';
+const speed = parseFloat(q.get('speed') || '0');
+const pose = q.get('pose') || 'rest';
+const FR = stand ? 3 : parseInt(q.get('frames') || '3'), W = parseInt(q.get('w') || '300'), H = 500;
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(W * FR, H);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x9fb8c8);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x667755, 1.1));
+const sun = new THREE.DirectionalLight(0xffffff, 1.8); sun.position.set(3, 5, 2); scene.add(sun);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), new THREE.MeshStandardMaterial({ color: 0x6a9a4a }));
+ground.rotation.x = -Math.PI / 2; scene.add(ground);
+const camera = new THREE.PerspectiveCamera(30, W / H, 0.1, 50);
+renderer.setScissorTest(true);
+const snap = (i) => { renderer.setViewport(i * W, 0, W, H); renderer.setScissor(i * W, 0, W, H); renderer.render(scene, camera); };
+
+const ct = await loadCowboy(idx);
+const outfit = q.get('random') === '1' ? randomOutfit() : playerOutfit(idx, 0xb03a2e);
+if (stand) {
+  const cb = new SkinnedCowboy(ct, outfit);
+  if (debug) paintOutfit(cb.mesh, outfit, ct.cowboy, ct, true);
+  // undo the riding pose: bind pose, feet on the ground
+  cb.model.traverse((o) => { if (o.isBone) { const d = ct.boneData.get(o.name); if (d) o.quaternion.copy(d.rest); } });
+  cb.model.position.set(0, -ct.groundY * ct.S, 0);
+  scene.add(cb.group); window.__cb = cb; window.__ct = ct; window.__THREE = THREE;
+  const views = [[0, 1, 6.5], [6.5, 1, 0], [0, 1, -6.5]];
+  views.forEach((p, i) => { camera.position.set(...p); camera.lookAt(0, 0.9, 0); snap(i); });
+  window.__done = { paint: paintOutfit.lastInfo };
+} else {
+  const species = getSpecies(q.get('species') || 'quarter');
+  const template = await loadHorseType(species.type);
+  const rig = new SkinnedHorseRider(template, species, 0);
+  rig.mountCowboy(new SkinnedCowboy(ct, outfit));
+  scene.add(rig.group);
+  const dt = 1 / 120; let t = 0;
+  for (let i = 0; i < 120 * 4; i++) { rig.animate(dt, speed, 0, pose, t); rig.postPose(); t += dt; }
+  const views = [[7.5, 1.4, 0.1], [5.0, 1.8, 5.0], [0.1, 1.5, 7.5]];
+  views.forEach((p, i) => { rig.animate(dt, speed, 0, pose, t); rig.postPose(); t += 0.05; camera.position.set(...p); camera.lookAt(0, 1.2, 0.1); snap(i); });
+  const hand = rig.handWorldPos(new THREE.Vector3());
+  window.__done = { hand: hand.toArray().map((v) => +v.toFixed(2)), paint: paintOutfit.lastInfo };
+}
+document.title = 'done';
+</script></body></html>

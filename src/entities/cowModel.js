@@ -207,33 +207,37 @@ export class SkinnedCowRig {
 
     if (state === 'struggle' || state === 'stomp') {
       const k = 0.4 + intensity * 0.9;
-      const f = state === 'stomp' ? 7 + intensity * 6 : 6;
-      const t = time + this.phase;
-      pose.pitch += Math.sin(t * f) * 0.09 * k;
-      pose.roll = Math.sin(t * f * 0.8 + 1) * 0.1 * k;
-      pose.bodyY += Math.abs(Math.sin(t * f)) * 0.07 * k;
+      // thrash cadence: the normal struggle rate, and for the bull it winds
+      // up with his anger to at most double. Integrated as a phase so a
+      // changing rate never jumps the motion.
+      const f = state === 'stomp' ? 6 * (1 + Math.min(1, intensity)) : 6;
+      this.thrash = (this.thrash || this.phase) + dt * f;
+      const t = this.thrash;
+      pose.pitch += Math.sin(t) * 0.09 * k;
+      pose.roll = Math.sin(t * 0.8 + 1) * 0.1 * k;
+      pose.bodyY += Math.abs(Math.sin(t)) * 0.07 * k;
       if (state === 'stomp') {
         // head down, horns tossing, off fore hoof pawing the ground
-        pose.neck += 0.45 + Math.sin(t * f * 1.1) * 0.2 * k;
-        pose.head = -0.35 + Math.sin(t * f * 1.3) * 0.35 * k;
-        pose.headYaw = Math.sin(t * f * 0.7) * 0.45 * k;
-        const paw = Math.sin(t * f);
-        pose.legs[1] = { a: -0.35 + paw * 0.45, b: -0.5 * Math.max(0, Math.sin(t * f + 1.2)) * (0.6 + k), c: 0.8 * Math.max(0, Math.sin(t * f + 1.2)) * (0.6 + k), d: 0.15 };
+        pose.neck += 0.45 + Math.sin(t * 1.1) * 0.2 * k;
+        pose.head = -0.35 + Math.sin(t * 1.3) * 0.35 * k;
+        pose.headYaw = Math.sin(t * 0.7) * 0.45 * k;
+        const paw = Math.sin(t);
+        pose.legs[1] = { a: -0.35 + paw * 0.45, b: -0.5 * Math.max(0, Math.sin(t + 1.2)) * (0.6 + k), c: 0.8 * Math.max(0, Math.sin(t + 1.2)) * (0.6 + k), d: 0.15 };
         pose.legs[0] = { a: 0.15, b: -0.05, c: 0.05, d: -0.15 };
         pose.legs[2] = { a: 0.28, b: 0.12, c: -0.15, d: -0.12 };
         pose.legs[3] = { a: 0.28, b: 0.12, c: -0.15, d: -0.12 };
-        for (let i = 0; i < 5; i++) { pose.tail[i].x = 0.7 + Math.sin(t * 9 + i) * 0.15; pose.tail[i].z = Math.sin(t * 7 + i * 0.8) * 0.3; }
+        for (let i = 0; i < 5; i++) { pose.tail[i].x = 0.7 + Math.sin(t * 1.5 + i) * 0.15; pose.tail[i].z = Math.sin(t * 1.2 + i * 0.8) * 0.3; }
       } else {
         // thrashing against the rope: head shaking, legs bracing and stamping
-        pose.neck += Math.sin(t * f * 1.1) * 0.3 * k;
-        pose.head = Math.sin(t * f * 1.4 + 0.5) * 0.25 * k;
-        pose.headYaw = Math.sin(t * f * 0.9) * 0.5 * k;
+        pose.neck += Math.sin(t * 1.1) * 0.3 * k;
+        pose.head = Math.sin(t * 1.4 + 0.5) * 0.25 * k;
+        pose.headYaw = Math.sin(t * 0.9) * 0.5 * k;
         for (let i = 0; i < 4; i++) {
-          const s = Math.sin(t * f + i * 1.7), lift = Math.max(0, Math.sin(t * f + i * 1.7 + 1)) * k;
+          const s = Math.sin(t + i * 1.7), lift = Math.max(0, Math.sin(t + i * 1.7 + 1)) * k;
           const front = i < 2;
           pose.legs[i] = { a: s * 0.45 * k, b: front ? -0.55 * lift : 0.35 * lift, c: front ? 0.75 * lift : -0.55 * lift, d: 0.1 * lift - 0.1 };
         }
-        for (let i = 0; i < 5; i++) { pose.tail[i].x = 0.2 + Math.sin(t * 8 + i) * 0.2; pose.tail[i].z = Math.sin(t * 9 + i * 0.9) * 0.5; }
+        for (let i = 0; i < 5; i++) { pose.tail[i].x = 0.2 + Math.sin(t * 1.3 + i) * 0.2; pose.tail[i].z = Math.sin(t * 1.5 + i * 0.9) * 0.5; }
       }
       this.postPose();
       return;

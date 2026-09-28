@@ -47,15 +47,18 @@ function prepareTemplate(scene, height, opts) {
   let mesh = null;
   scene.traverse((o) => { if (o.isSkinnedMesh) mesh = o; });
 
-  if (opts.fixTorso) fixTorsoWeights(mesh);
-  // some breeds' front legs are rigged shoulder→elbow→fetlock→pastern with no
-  // carpus; give them a knee so the cannon can fold
-  const frontChain = ensureFrontKnees(mesh);
-  scene.updateMatrixWorld(true);
-  // the rigs' single 'head' bone carries neck AND skull; split a skull bone
-  // off at the poll so the neck can drop while the nose reaches out
-  ensureSkull(mesh);
-  scene.updateMatrixWorld(true);
+  let frontChain = null;
+  if (!opts.humanoid) {
+    if (opts.fixTorso) fixTorsoWeights(mesh);
+    // some breeds' front legs are rigged shoulder→elbow→fetlock→pastern with no
+    // carpus; give them a knee so the cannon can fold
+    frontChain = ensureFrontKnees(mesh);
+    scene.updateMatrixWorld(true);
+    // the rigs' single 'head' bone carries neck AND skull; split a skull bone
+    // off at the poll so the neck can drop while the nose reaches out
+    ensureSkull(mesh);
+    scene.updateMatrixWorld(true);
+  }
 
   // measure from SKINNED vertex positions (what actually renders), not the
   // raw quantized geometry
@@ -83,11 +86,16 @@ function prepareTemplate(scene, height, opts) {
     inv.copy(wq).invert();
     boneData.set(o.name, {
       rest: o.quaternion.clone(),
+      wq: wq.clone(), wqInv: inv.clone(),
       ax: WX.clone().applyQuaternion(inv).normalize(),
       ay: WY.clone().applyQuaternion(inv).normalize(),
       az: WZ.clone().applyQuaternion(inv).normalize(),
     });
   });
+
+  // ground offset so hooves / boots sit on y = 0
+  const groundY = min.y;
+  if (opts.humanoid) return { scene, S, boneData, size, mesh, groundY, min, max, humanoid: true };
 
   // seat: highest point of the mesh over the mid-back (the saddle top)
   const chest = new THREE.Vector3(), hips = new THREE.Vector3();
@@ -99,8 +107,6 @@ function prepareTemplate(scene, height, opts) {
     if (Math.abs(p.x) < size.x * 0.12 && Math.abs(p.z - seatZ) < size.z * 0.05) seatY = Math.max(seatY, p.y);
   }
   const seat = new THREE.Vector3(0, seatY, seatZ);
-  // ground offset so hooves sit on y = 0
-  const groundY = min.y;
   // leg length (shoulder joint height) in world metres, for stride geometry
   const sh = new THREE.Vector3();
   scene.getObjectByName('frontleg').getWorldPosition(sh);
@@ -451,6 +457,19 @@ export function setBoneRot(rig, name, rx, ry, rz) {
   if (ry) b.quaternion.multiply(_q.setFromAxisAngle(d.ay, ry));
 }
 
+// Apply a rotation given in the WORLD frame (at bind) to a bone, on top of
+// its rest pose — for limbs whose pose is easier to compose as sequential
+// world-axis turns (humanoid arms and legs). Sequential world rotations
+// compose as q = later * earlier.
+const _q3 = new THREE.Quaternion();
+export function setBoneWorldRot(rig, name, qWorld) {
+  const b = rig.bones[name];
+  const d = rig.template.boneData.get(name);
+  if (!b || !d) return;
+  _q3.copy(d.wqInv).multiply(qWorld).multiply(d.wq);
+  b.quaternion.copy(d.rest).multiply(_q3);
+}
+
 // Clone a template's scene into a drivable model: returns { model, bones,
 // mesh, modelBaseY }. The mesh gets its own geometry object so per-instance
 // vertex colours can be attached; with `share` the vertex buffers themselves
@@ -553,9 +572,30 @@ export class SkinnedHorseRider extends HorseRider {
     this.postPose();
   }
 
-  setColors(_coatIdx, cowboyIdx) {
-    const cb = COWBOY_COLORS[cowboyIdx % COWBOY_COLORS.length];
+  setColors(_coatIdx, shirtIdx) {
+    const cb = COWBOY_COLORS[shirtIdx % COWBOY_COLORS.length];
     this.mats.shirt.color.setHex(cb.shirt);
+    if (this.cowboy) this.cowboy.setShirt(cb.shirt);
+  }
+
+  // Put a skinned cowboy (cowboyModel.js) in the saddle in place of the
+  // procedural rider. The procedural rider keeps being posed invisibly; the
+  // cowboy reads its torso lean / posting and the arm pose each frame.
+  mountCowboy(cowboy) {
+    if (this.cowboy) this.riderMount.remove(this.cowboy.group);
+    this.cowboy = cowboy;
+    this.rider.visible = false;
+    this.riderMount.add(cowboy.group);
+    this.postPose();
+  }
+
+  _animateRider(armPose, time, g) {
+    super._animateRider(armPose, time, g);
+    if (this.cowboy) this.cowboy.animate(armPose, time, g);
+  }
+
+  handWorldPos(out) {
+    return this.cowboy ? this.cowboy.handWorldPos(out) : super.handWorldPos(out);
   }
 
   _setRot(name, rx, ry, rz) { setBoneRot(this, name, rx, ry, rz); }
@@ -605,5 +645,6 @@ export class SkinnedHorseRider extends HorseRider {
   postPose() {
     if (!this.pose) return;
     applyPose(this, this.pose, this.body.position.y - 1.06, this.body.rotation.z);
+    if (this.cowboy) this.cowboy.pose(this.torso.rotation.x, this.torso.rotation.z, this.rider.position.y - this.riderRestY);
   }
 }
