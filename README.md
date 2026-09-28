@@ -161,7 +161,10 @@ Monte Carlo (2M draws per cow type ⇒ 0.952–0.962 across every type/strategy)
   the game.
 - The rope is a per-frame rebuilt CatmullRom tube (80 segments, 8 sides)
   over a 26-particle verlet rope with bending constraints, so it curves
-  instead of kinking: overhead spin at idle, a ballistic arc with trailing
+  instead of kinking, and the particles are kept out of the animals by three
+  capsule colliders per body (torso, neck, head; radii measured once from each
+  model's mesh, endpoints riding the bones) for both the roped cow and the
+  rider's horse: overhead spin at idle, a ballistic arc with trailing
   line on throw, and a taut, sagging line with a cinched loop during a
   wrangle. On a catch the loop cinches: it closes from its landing size down
   onto the neck in a third of a second, seated on a ring the cow rig measures

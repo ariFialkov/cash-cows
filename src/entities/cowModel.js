@@ -6,7 +6,7 @@
 // horse coats — Holstein patches, brown, and the glowing special variants.
 
 import * as THREE from 'three';
-import { loadRigTemplate, instantiateRig, applyPose } from './horseModel.js';
+import { loadRigTemplate, instantiateRig, applyPose, bodyCapsules } from './horseModel.js';
 import { GaitEngine } from './gait.js';
 import { fbm2 } from '../core/rng.js';
 
@@ -267,6 +267,8 @@ export class SkinnedCowRig {
     this.pose.ears[0] = this.pose.ears[1] = 0;
     applyPose(this, this.pose, this.pose.bodyY, this.pose.roll);
   }
+
+  colliders() { return bodyCapsules(this); }
 
   // where the rope cinches: the base of the neck
   neckWorldPos(out) {

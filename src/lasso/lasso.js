@@ -109,6 +109,7 @@ export class Lasso {
     for (let i = 0; i < LOOP_PTS; i++) this._loopPts.push(new THREE.Vector3());
 
     this._ring = { center: new THREE.Vector3(), normal: new THREE.Vector3(0, 1, 0), radius: 0.3 };
+    this._cols = [];
     this.cinchT = 0;
     this.cinchFrom = 0.6;
     this._v1 = new THREE.Vector3();
@@ -241,6 +242,10 @@ export class Lasso {
   // --- per-frame ------------------------------------------------------------
   update(dt, player, time) {
     const hand = player.rig.handWorldPos(this._v1);
+    // body colliders the rope must stay out of: the rider's horse and the roped cow
+    this._cols.length = 0;
+    if (player.rig.colliders) for (const c of player.rig.colliders()) this._cols.push(c);
+    if (this.attachedCow && this.attachedCow.rig.colliders) for (const c of this.attachedCow.rig.colliders()) this._cols.push(c);
 
     if (this.state === 'flying') {
       this.flyT += dt;
@@ -439,6 +444,27 @@ export class Lasso {
           // only resist compression (bending), never stretch the rope straight
           const d = P[i].distanceTo(P[i + 2]);
           if (d < this._segLen * 1.9) relax(i, i + 2, this._segLen * 1.9, 0.25);
+        }
+        // keep the rope out of the animals: push free particles out of the
+        // body capsules along the nearest-surface normal
+        if (this._cols.length) {
+          for (let i = 1; i < last; i++) {
+            const p = P[i];
+            for (const c of this._cols) {
+              const ax = c.a.x, ay = c.a.y, az = c.a.z;
+              const bx = c.b.x - ax, by = c.b.y - ay, bz = c.b.z - az;
+              const bb = bx * bx + by * by + bz * bz;
+              let u = bb > 1e-9 ? ((p.x - ax) * bx + (p.y - ay) * by + (p.z - az) * bz) / bb : 0;
+              u = u < 0 ? 0 : u > 1 ? 1 : u;
+              const qx = ax + bx * u, qy = ay + by * u, qz = az + bz * u;
+              let nx = p.x - qx, ny = p.y - qy, nz = p.z - qz;
+              const d = Math.sqrt(nx * nx + ny * ny + nz * nz);
+              const R = c.r + ROPE_RADIUS + 0.015;
+              if (d >= R) continue;
+              if (d < 1e-5) { nx = 0; ny = 1; nz = 0; } else { nx /= d; ny /= d; nz /= d; }
+              p.x = qx + nx * R; p.y = qy + ny * R; p.z = qz + nz * R;
+            }
+          }
         }
       }
       // rope-terrain collision: no particle may sink below the ground

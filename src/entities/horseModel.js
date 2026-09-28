@@ -498,6 +498,68 @@ export function instantiateRig(template, share = false) {
   return { model, bones, mesh, modelBaseY: -template.groundY * template.S };
 }
 
+// ---------------------------------------------------------------------------
+// Body colliders for the rope: three capsules (torso, neck, head) per animal.
+// Radii are measured once per template from the mesh around each bone axis
+// (a high percentile of the radial distance among vertices skinned to the
+// relevant bones), endpoints follow the bones each frame.
+
+function measureRadius(template, aName, bName, boneNames, pct = 0.9, sMin = 0.1, sMax = 0.9, endPoint = null) {
+  const t = template, m = t.mesh;
+  const A = t.scene.getObjectByName(aName), B = endPoint ? null : t.scene.getObjectByName(bName);
+  if (!A || (!B && !endPoint)) return 0.3;
+  const a = A.getWorldPosition(new THREE.Vector3());
+  const b = endPoint ? endPoint.clone() : B.getWorldPosition(new THREE.Vector3());
+  const axis = b.clone().sub(a), L = axis.length() || 1e-6; axis.divideScalar(L);
+  const names = m.skeleton.bones.map((bn) => bn.name);
+  const si = m.geometry.attributes.skinIndex, sw = m.geometry.attributes.skinWeight;
+  const v = new THREE.Vector3(), rel = new THREE.Vector3();
+  const rs = [];
+  for (let i = 0; i < m.geometry.attributes.position.count; i++) {
+    let w = 0;
+    for (let j = 0; j < 4; j++) if (boneNames.has(names[si.getComponent(i, j)])) w += sw.getComponent(i, j);
+    if (w < 0.6) continue;
+    m.getVertexPosition(i, v).applyMatrix4(m.matrixWorld);
+    rel.copy(v).sub(a);
+    const sfrac = rel.dot(axis) / L;
+    if (sfrac < sMin || sfrac > sMax) continue;
+    rel.addScaledVector(axis, -sfrac * L);
+    rs.push(rel.length());
+  }
+  if (!rs.length) return 0.3;
+  rs.sort((x, y) => x - y);
+  return rs[Math.floor((rs.length - 1) * pct)] * t.S;
+}
+
+// world-space capsules {a, b, r} for a rig built on a quadruped template
+export function bodyCapsules(rig) {
+  const t = rig.template;
+  if (!t.capRadii) {
+    const neck = measureRadius(t, 'head', 'skull', new Set(['head']), 0.85, 0.15, 0.9);
+    t.capRadii = {
+      torso: measureRadius(t, 'chest', 'Hips', new Set(['chest', 'Hips']), 0.9, 0.0, 1.0),
+      neck,
+      // horns and ears would blow the head up; a head is never fatter than its neck
+      head: Math.min(neck * 0.95, measureRadius(t, 'skull', null, new Set(['skull']), 0.8, 0.1, 0.95, t.muzzle)),
+    };
+  }
+  if (!rig._caps) {
+    // the nose as a point riding the skull bone
+    const skullT = t.scene.getObjectByName('skull');
+    const nose = new THREE.Object3D();
+    nose.position.copy(t.muzzle).applyMatrix4(skullT.matrixWorld.clone().invert());
+    rig.bones.skull.add(nose);
+    rig._nose = nose;
+    rig._caps = ['torso', 'neck', 'head'].map(() => ({ a: new THREE.Vector3(), b: new THREE.Vector3(), r: 0 }));
+  }
+  const sc = rig.group.scale.x;
+  const c = rig._caps;
+  rig.bones.chest.getWorldPosition(c[0].a); rig.bones.Hips.getWorldPosition(c[0].b); c[0].r = t.capRadii.torso * sc;
+  rig.bones.head.getWorldPosition(c[1].a); rig.bones.skull.getWorldPosition(c[1].b); c[1].r = t.capRadii.neck * sc;
+  rig.bones.skull.getWorldPosition(c[2].a); rig._nose.getWorldPosition(c[2].b); c[2].r = t.capRadii.head * sc;
+  return c;
+}
+
 // Push a gait-engine pose onto the skeleton. `roll` is the body roll about
 // the forward axis; bodyY the bob offset in metres.
 export function applyPose(rig, pose, bodyY, roll) {
@@ -643,6 +705,8 @@ export class SkinnedHorseRider extends HorseRider {
   handWorldPos(out) {
     return this.cowboy ? this.cowboy.handWorldPos(out) : super.handWorldPos(out);
   }
+
+  colliders() { return bodyCapsules(this); }
 
   _setRot(name, rx, ry, rz) { setBoneRot(this, name, rx, ry, rz); }
 
