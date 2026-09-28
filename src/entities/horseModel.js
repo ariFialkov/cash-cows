@@ -17,6 +17,7 @@ import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { HorseRider, COWBOY_COLORS } from './horse.js';
 import { HORSE_TYPES } from '../game/horses.js';
 import { fbm2 } from '../core/rng.js';
+import { GaitEngine } from './gait.js';
 
 const cache = new Map();
 
@@ -81,8 +82,12 @@ function prepareTemplate(scene, type) {
   const seat = new THREE.Vector3(0, seatY, seatZ);
   // ground offset so hooves sit on y = 0
   const groundY = min.y;
+  // leg length (shoulder joint height) in world metres, for stride geometry
+  const sh = new THREE.Vector3();
+  scene.getObjectByName('frontleg').getWorldPosition(sh);
+  const legLen = (sh.y - min.y) * S;
 
-  return { scene, type, S, boneData, seat, size, mesh, groundY };
+  return { scene, type, S, boneData, seat, size, mesh, groundY, legLen };
 }
 
 // ---------------------------------------------------------------------------
@@ -200,10 +205,12 @@ const _q2 = new THREE.Quaternion();
 
 export class SkinnedHorseRider extends HorseRider {
   constructor(template, species, cowboyIdx = 0) {
-    super({ virtual: true, gait: HORSE_TYPES[species.type].gait });
+    super({ virtual: true });
     this.species = species;
     this.template = template;
     const S = template.S;
+    this.engine = new GaitEngine(HORSE_TYPES[species.type].gait, template.legLen);
+    this.pose = null;
 
     this.model = SkeletonUtils.clone(template.scene);
     this.model.scale.setScalar(S);
@@ -260,45 +267,67 @@ export class SkinnedHorseRider extends HorseRider {
     if (ry) b.quaternion.multiply(_q.setFromAxisAngle(d.ay, ry));
   }
 
-  _mapLeg(leg, prefix) {
-    const hip = leg.hip.rotation.x, knee = leg.knee.rotation.x, fet = leg.fetlock.rotation.x;
-    this._setRot(prefix, hip, 0, 0);
-    if (leg.front) {
-      // elbow + knee share the fold
-      this._setRot(prefix + '0', knee * 0.5, 0, 0);
-      this._setRot(prefix + '1', knee * 0.7, 0, 0);
-    } else {
-      // stifle and hock flex in opposite directions (reciprocal apparatus)
-      this._setRot(prefix + '0', knee * 0.55, 0, 0);
-      this._setRot(prefix + '1', -knee * 0.75, 0, 0);
-    }
-    this._setRot(prefix + '2', fet * 0.8, 0, 0);
+  // The gait engine produces the horse pose; the virtual body carries the
+  // bob/roll the rider and jump logic read; postPose() pushes it to bones.
+  animate(dt, speed, turn, armPose, time) {
+    const pose = this.engine.update(dt, speed, turn, time);
+    this.pose = pose;
+    this.body.position.y = 1.06 + pose.bodyY;
+    this.body.rotation.z = pose.roll;
+    this._animateRider(armPose, time, {
+      run: pose.run, P: pose.P * Math.PI * 2, gallopW: pose.gallopW, trotW: pose.trotW,
+    });
   }
 
-  // push the virtual joint pose onto the skeleton
+  // Equestrian jump blended over the gait pose. f = 0 takeoff .. 1 touchdown.
+  applyJump(f) {
+    const pose = this.pose;
+    if (!pose) return;
+    const w = Math.min(1, 4 * f * (1 - f) * 1.8);
+    const mix = (cur, tgt) => cur + (tgt - cur) * w;
+    pose.pitch = mix(pose.pitch, -0.3 * Math.cos(f * Math.PI));
+    pose.chestFlex = mix(pose.chestFlex, 0.1 * Math.sin(f * Math.PI));
+    for (let i = 0; i < 2; i++) { // forelegs: tuck tight, then reach down to land
+      const L = pose.legs[i];
+      const e = Math.max(0, (f - 0.55) / 0.45);
+      const t = { a: -0.9 + e * 0.35, b: -0.9 + e * 0.85, c: 1.3 - e * 1.25, d: 0.6 - e * 0.75 };
+      for (const k in t) L[k] = mix(L[k], t[k]);
+    }
+    for (let i = 2; i < 4; i++) { // hinds: drive off extended, then gather under
+      const L = pose.legs[i];
+      const e = Math.max(0, (f - 0.4) / 0.6);
+      const t = { a: 0.75 - e * 1.1, b: -0.25 + e * 0.9, c: 0.25 - e * 1.0, d: -0.15 + e * 0.5 };
+      for (const k in t) L[k] = mix(L[k], t[k]);
+    }
+    pose.neck = mix(pose.neck, 0.45);
+    pose.headX = mix(pose.headX, -0.15);
+    pose.tail[0].x = mix(pose.tail[0].x, 0.5);
+    // rider rises into two-point
+    this.torso.rotation.x += (0.55 - this.torso.rotation.x) * w;
+    this.rider.position.y = this.riderRestY + Math.sin(f * Math.PI) * 0.035 * w;
+  }
+
+  // push the pose onto the skeleton
   postPose() {
-    const b = this.body;
-    this.model.position.y = this.modelBaseY + (b.position.y - 1.06);
-    this._setRot('Hips', b.rotation.x, 0, b.rotation.z);
-    this._setRot('chest', -b.rotation.x * 0.5, 0, 0); // spine flex
+    const pose = this.pose;
+    if (!pose) return;
+    this.model.position.y = this.modelBaseY + (this.body.position.y - 1.06);
+    this._setRot('Hips', pose.pitch, 0, this.body.rotation.z);
+    this._setRot('chest', pose.chestFlex, 0, 0);
 
-    this._mapLeg(this.legs[0], 'frontleg');
-    this._mapLeg(this.legs[1], 'R_frontleg');
-    this._mapLeg(this.legs[2], 'backleg');
-    this._mapLeg(this.legs[3], 'R_backleg');
+    const prefixes = ['frontleg', 'R_frontleg', 'backleg', 'R_backleg'];
+    for (let i = 0; i < 4; i++) {
+      const L = pose.legs[i], p = prefixes[i];
+      this._setRot(p, L.a, 0, 0);          // shoulder / hip
+      this._setRot(p + '0', L.b, 0, 0);    // elbow / stifle
+      this._setRot(p + '1', L.c, 0, 0);    // carpus / hock
+      this._setRot(p + '2', L.d, 0, 0);    // fetlock
+    }
 
-    const neckD = this.neck.rotation.x - 0.5;
-    const headD = this.head.rotation.x + 0.05;
-    this._setRot('head', neckD + headD * 0.7, this.head.rotation.y, 0);
-    this._setRot('earend', 0, 0, this.earL.rotation.z - 0.15);
-    this._setRot('R_earend', 0, 0, this.earR.rotation.z + 0.15);
-
-    const t0 = this.tail[0].rotation.x - 0.7, t1 = this.tail[1].rotation.x, t2 = this.tail[2].rotation.x;
-    const z0 = this.tail[0].rotation.z, z1 = this.tail[1].rotation.z, z2 = this.tail[2].rotation.z;
-    this._setRot('tail', t0 * 0.5, 0, z0 * 0.5);
-    this._setRot('tailstart', t0 * 0.4 + t1 * 0.4, 0, z0 * 0.4 + z1 * 0.4);
-    this._setRot('tail1', t1 * 0.5 + t2 * 0.3, 0, z1 * 0.5 + z2 * 0.3);
-    this._setRot('tail2', t2 * 0.5, 0, z2 * 0.5);
-    this._setRot('tail3', t2 * 0.4, 0, z2 * 0.4);
+    this._setRot('head', pose.neck + pose.headX * 0.7, pose.headYaw, 0);
+    this._setRot('earend', 0, 0, pose.ears[0]);
+    this._setRot('R_earend', 0, 0, pose.ears[1]);
+    const tailNames = ['tail', 'tailstart', 'tail1', 'tail2', 'tail3'];
+    for (let i = 0; i < 5; i++) this._setRot(tailNames[i], pose.tail[i].x, 0, pose.tail[i].z);
   }
 }

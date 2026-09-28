@@ -412,10 +412,21 @@ export class HorseRider {
       t.rotation.z = Math.sin(time * (1.1 + i * 0.3) + i) * (0.18 - run * 0.12);
     }
 
-    // rider — posts with the gallop, leans forward with speed
-    this.torso.rotation.x = 0.08 + run * 0.28 + (galloping ? Math.cos(P) * 0.05 * run : 0);
+    this._animateRider(armPose, time, { run, P, gallopW: galloping ? run : 0, trotW: 0 });
+  }
+
+  // rider: posts/leans with the gait, arm poses for the lasso. Shared by the
+  // procedural horse and the skinned breeds.
+  _animateRider(armPose, time, g) {
+    const { run, P, gallopW, trotW } = g;
+    this.torso.rotation.x = 0.08 + run * 0.28 + Math.cos(P) * 0.05 * gallopW;
     this.torso.rotation.z = this.body.rotation.z * -0.6;
     this.riderHead.rotation.x = -this.torso.rotation.x * 0.7;
+    // posting: a light lift twice per stride at the trot, once at the gallop
+    const Pc = P / (Math.PI * 2);
+    const post = trotW * Math.max(0, -Math.cos(Math.PI * 4 * (Pc - 0.2))) * 0.02
+      + gallopW * Math.max(0, Math.cos(Math.PI * 2 * (Pc - 0.8))) * 0.015;
+    this.rider.position.y = this.riderRestY + post;
 
     // right arm poses
     if (armPose === 'spin') {

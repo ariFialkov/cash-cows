@@ -1,0 +1,60 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>gait viewer</title>
+<style>body{margin:0;background:#9fb8c8}canvas{display:block}</style></head>
+<body>
+<script type="module">
+// Dev tool: renders one full stride of a breed at a given speed as a
+// 6-frame side-view filmstrip. Query: ?species=quarter&speed=4
+import * as THREE from 'three';
+import { getSpecies } from '/src/game/horses.js';
+import { loadHorseType, SkinnedHorseRider } from '/src/entities/horseModel.js';
+
+const q = new URLSearchParams(location.search);
+const species = getSpecies(q.get('species') || 'quarter');
+const speed = parseFloat(q.get('speed') || '4');
+const FR = 6, W = 250, H = 400;
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(W * FR, H);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x9fb8c8);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x667755, 1.1));
+const sun = new THREE.DirectionalLight(0xffffff, 1.8); sun.position.set(3, 5, 2); scene.add(sun);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), new THREE.MeshStandardMaterial({ color: 0x6a9a4a }));
+ground.rotation.x = -Math.PI / 2; scene.add(ground);
+const camera = new THREE.PerspectiveCamera(30, W / H, 0.1, 50);
+camera.position.set(8.2, 1.3, 0.1);
+camera.lookAt(0, 1.05, 0.1);
+
+const template = await loadHorseType(species.type);
+const rig = new SkinnedHorseRider(template, species, 0);
+scene.add(rig.group);
+rig.group.rotation.y = 0; // faces +z; camera on +x sees the profile
+
+const dt = 1 / 120;
+let t = 0;
+// settle the gait blend at this speed
+for (let i = 0; i < 120 * 4; i++) { rig.animate(dt, speed, 0, 'rest', t); rig.postPose(); t += dt; }
+// capture 6 evenly spaced phases of one stride
+const startPhase = Math.floor(rig.engine.phase) + 1;
+let captured = 0, lastBin = -1;
+renderer.setScissorTest(true);
+while (captured < FR) {
+  rig.animate(dt, speed, 0, 'rest', t); rig.postPose(); t += dt;
+  const ph = rig.engine.phase;
+  if (ph < startPhase) continue;
+  const bin = Math.floor((ph - startPhase) * FR);
+  if (bin !== lastBin && bin === captured) {
+    renderer.setViewport(captured * W, 0, W, H);
+    renderer.setScissor(captured * W, 0, W, H);
+    renderer.render(scene, camera);
+    captured++;
+    lastBin = bin;
+  }
+  if (ph - startPhase > 2) break;
+}
+window.__done = { freq: rig.engine.speedSm, w: { ...rig.engine.w } };
+document.title = 'done';
+</script></body></html>

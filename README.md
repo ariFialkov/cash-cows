@@ -32,8 +32,8 @@ the throw while aiming.
 - **The Stable (horse storefront).** From the menu, spend winnings on horses
   across five types — **Draft, Gaited, Warmblood, Light, Pony** — each with
   its own movement tendencies (speed / agility / handling) and a signature
-  gait. Twenty species span Common → Legendary rarity with rising beauty,
-  price and small stat bonuses (a black Friesian, a leopard-spotted Pony of
+  gait. Twenty species span Common → Legendary rarity ($5–$250) with rising
+  beauty, price and small stat bonuses (a black Friesian, a leopard-spotted Pony of
   the Americas, a metallic-gold Akhal-Teke…). Selecting a card previews the
   horse live on the menu; buy once, equip any time. Stats drive real handling:
   a Light horse hits 15 m/s but scrubs speed in sharp turns, a Draft is slow
@@ -95,11 +95,18 @@ Monte Carlo (2M draws per cow type ⇒ 0.952–0.962 across every type/strategy)
   GLBs (~120KB each, converted from the FBX sources in `models-src/` by
   `npm run models`). The procedural gait code is unchanged: `animate()` poses
   a set of virtual joints and `SkinnedHorseRider.postPose()` retargets them
-  onto the skeleton as deltas over the bind pose (front knee fold split across
-  elbow + knee, hind fold across stifle + hock in opposite directions, tail
-  spread over five bones, spine flex on the chest bone). Per-type gait
-  profiles nudge stride frequency, bob, knee lift, neck carriage and tail
-  carriage so each type moves distinctively. Coats are painted into vertex
+  onto the skeleton as deltas over the bind pose. Gaits come from a
+  biomechanical engine (`entities/gait.js`): footfall-timed stance/swing
+  cycles per limb (4-beat walk, diagonal trot or 4-beat running walk, 4-beat
+  transverse gallop with suspension), stride frequency derived from speed so
+  hooves plant, anatomically-signed joints (fetlocks sink under load and snap
+  at breakover, elbow + carpus fold in swing, stifle + hock flex
+  reciprocally), footfall-locked body bob/pitch/spine flex and head nod, a
+  spring-simulated tail chain, ear flicks, idle breathing and a cocked hind
+  leg — all cross-faded through a shared phase so walk→trot→gallop re-times
+  the legs smoothly. Per-type profiles set cadence, stride, suspension, knee
+  action and head/tail carriage. `tools/gait-viewer.html` renders one stride
+  as a side-view filmstrip for tuning. Coats are painted into vertex
   colours from bind-pose position + bone weights — points, socks, blazes,
   dapples, pinto patches, leopard spots, roan, dorsal stripes, mane/tail and
   saddle leather — so no texture is required (a hide texture can be layered
