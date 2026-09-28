@@ -647,9 +647,36 @@ export class SkinnedHorseRider extends HorseRider {
     if (this.cowboy) this.riderMount.remove(this.cowboy.group);
     this.cowboy = cowboy;
     this.rider.visible = false;
+    cowboy.group.position.set(0, 0, 0);
+    cowboy.group.quaternion.identity();
     this.riderMount.add(cowboy.group);
     this._buildReins();
+    if (this.reins) for (const r of this.reins) r.visible = true;
     this.postPose();
+  }
+
+  // Take the cowboy out of the saddle (he keeps his world transform for the
+  // caller to place); the horse stands riderless with the reins hidden.
+  dismountCowboy() {
+    const cb = this.cowboy;
+    if (!cb) return null;
+    this.group.updateMatrixWorld(true);
+    const p = cb.group.getWorldPosition(new THREE.Vector3());
+    const q = cb.group.getWorldQuaternion(new THREE.Quaternion());
+    this.riderMount.remove(cb.group);
+    cb.group.position.copy(p);
+    cb.group.quaternion.copy(q);
+    this.cowboy = null;
+    if (this.reins) for (const r of this.reins) r.visible = false;
+    return cb;
+  }
+
+  // world transform of the saddle seat (where a cowboy's hips go)
+  seatWorld(pos, quat) {
+    this.group.updateMatrixWorld(true);
+    this.riderMount.getWorldPosition(pos);
+    if (quat) this.riderMount.getWorldQuaternion(quat);
+    return pos;
   }
 
   // Reins: two thin leather lines from the cowboy's left hand to either side
@@ -677,7 +704,7 @@ export class SkinnedHorseRider extends HorseRider {
   }
 
   _updateReins(run, tight) {
-    if (!this.reins) return;
+    if (!this.reins || !this.cowboy) return;
     const hand = _rh.copy(this.cowboy.bones.smartrigLeftHand.getWorldPosition(_rh));
     this.group.worldToLocal(hand);
     for (let i = 0; i < 2; i++) {

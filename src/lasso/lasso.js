@@ -117,6 +117,10 @@ export class Lasso {
     this._v3 = new THREE.Vector3();
   }
 
+  setVisible(v) {
+    this.rope.visible = this.loop.visible = this.honda.visible = v;
+  }
+
   setColor(hex) {
     this.color = hex;
     const tex = ropeTextures(hex);

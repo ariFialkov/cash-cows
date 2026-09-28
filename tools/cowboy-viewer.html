@@ -35,7 +35,27 @@ const snap = (i) => { renderer.setViewport(i * W, 0, W, H); renderer.setScissor(
 
 const ct = await loadCowboy(idx);
 const outfit = q.get('random') === '1' ? randomOutfit() : playerOutfit(idx, 0xb03a2e);
-if (stand) {
+const groundMode = q.get('ground');
+if (groundMode) {
+  // off-horse poses: ?ground=roped|tantrum|dustoff|walk|mount&span=2
+  const cb = new SkinnedCowboy(ct, outfit);
+  scene.add(cb.group);
+  const span = parseFloat(q.get('span') || '2'), dt = 1 / 60;
+  camera.position.set(4.5, 2.0, 4.0); camera.lookAt(0, 0.7, 0);
+  let t = 0;
+  const place = () => {
+    if (groundMode === 'roped') {
+      const m = new THREE.Matrix4().makeBasis(new THREE.Vector3(-1, 0, 0), new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 1, 0));
+      cb.group.quaternion.setFromRotationMatrix(m); cb.group.position.set(0, 0.16, 0);
+    } else if (groundMode === 'tantrum') { cb.group.quaternion.identity(); cb.group.position.set(0, 0.1, 0); }
+    else { cb.group.quaternion.identity(); cb.group.position.set(0, cb.hipsHeight - 0.02, 0); }
+  };
+  for (let i = 0; i < FR; i++) {
+    const until = t + span / FR;
+    while (t < until) { place(); cb.groundPose(groundMode, t, dt, { walk: 1, phase: t * 2 * Math.PI * 1.7 }); t += dt; }
+    snap(i);
+  }
+} else if (stand) {
   const cb = new SkinnedCowboy(ct, outfit);
   if (debug) paintOutfit(cb.mesh, outfit, ct.cowboy, ct, true);
   // undo the riding pose: bind pose, feet on the ground

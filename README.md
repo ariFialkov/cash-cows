@@ -62,6 +62,12 @@ the throw while aiming.
   a floating +amount over the rider and a feed toast (big multipliers get a
   "lucky herd!" call-out). They leave special cows — and any cow near you —
   alone, and cows flee from whichever rider is closest.
+- **Rope a rival** (just for laughs, no bet, no payout): land the loop on a
+  bot cowboy and he comes off his horse and gets dragged along behind you for
+  a couple of seconds. Let go and he sits up and throws a tantrum, steam
+  coming out of his ears, then dusts himself off, walks back to his horse,
+  climbs on and carries on as if nothing happened. Aim assist will pick a
+  rival when no cow is closer.
 - **Special cows** (all the same average RTP as everything else):
   - 🟣 **Mystery cow** — glowing purple, every one is the same size; the
     multiplier (1.3×–20×) is hidden until the wrangle resolves.

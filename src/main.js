@@ -235,7 +235,7 @@ function aimVectorToTarget(dx, dy) {
     0,
     player.pos.z + dy * inv * dist
   );
-  assistCow = herd.cowNear(aimTarget, ASSIST_RADIUS);
+  assistCow = herd.cowNear(aimTarget, ASSIST_RADIUS) || bots.near(aimTarget, ASSIST_RADIUS * 0.75);
   if (assistCow) {
     aimTarget.x = assistCow.pos.x;
     aimTarget.z = assistCow.pos.z;
@@ -276,11 +276,22 @@ input.onAimEnd = (dx, dy) => {
 
 function onLassoLand(pt) {
   const cow = herd.cowNear(pt, 1.7);
-  if (!cow) {
-    effects.burst(pt, 0xc9b48a, 10, 2, 1.5); // dust poof
-    return;
-  }
-  hook(cow);
+  if (cow) { hook(cow); return; }
+  // a rival in the loop? rope him off his horse (just for laughs)
+  const bot = bots.near(pt, 1.8);
+  if (bot && ropeBot(bot)) return;
+  effects.burst(pt, 0xc9b48a, 10, 2, 1.5); // dust poof
+}
+
+// The gag: no bet, no payout. He's dragged for a couple of seconds, then let
+// go to sulk, dust off and climb back on.
+function ropeBot(bot) {
+  if (!bot.rope(player.pos, (b, pos, text) => spawnFloater(pos, text, false))) return false;
+  sfx.rope();
+  lasso.attach(bot.ropeTarget);
+  wrangle = { mode: 'joke', cow: null, bot, t: 0, duration: 2.6 };
+  ui.toast(`You roped ${bot.name} clean off his horse!`, 'gold');
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -391,8 +402,31 @@ function releaseCow(cow) {
 function updateWrangle(dt, time) {
   if (!wrangle) return;
   const w = wrangle;
-  const cow = w.cow;
   w.t += dt;
+
+  if (w.mode === 'joke') {
+    // drag the roped rival along behind the horse, then let him go
+    const g = w.bot.ground;
+    if (!g || g.mode !== 'roped') { wrangle = null; lasso.releaseToIdle(); return; }
+    g.puller.copy(player.pos);
+    const toP = new THREE.Vector3().subVectors(player.pos, g.pos).setY(0);
+    const d = toP.length();
+    if (d > 2.3) {
+      toP.divideScalar(d);
+      g.pos.addScaledVector(toP, Math.min(d - 2.3, 7 * dt));
+      // bumping along the ground
+      g.pos.x += Math.sin(time * 9) * 0.15 * dt; g.pos.z += Math.cos(time * 7) * 0.15 * dt;
+    }
+    if (w.t >= w.duration) {
+      lasso.snap();
+      w.bot.release();
+      ui.toast(`Let ${w.bot.name} go. He's not happy about it.`);
+      wrangle = null;
+    }
+    return;
+  }
+
+  const cow = w.cow;
 
   // the hooked cow drags away from the rider; the rider is leashed to it
   const away = new THREE.Vector3().subVectors(cow.pos, player.pos);
@@ -538,7 +572,7 @@ function frame() {
     : 'spin';
   // the cowboy's arm follows the rope's spin; he watches what he's working
   player.rig.lassoAngle = lasso.spinAngle;
-  player.rig.lookTarget = wrangle ? wrangle.cow.pos : (lasso.state === 'aiming' || lasso.state === 'flying') ? aimTarget : null;
+  player.rig.lookTarget = wrangle ? (wrangle.cow ? wrangle.cow.pos : wrangle.bot.ground?.pos ?? null) : (lasso.state === 'aiming' || lasso.state === 'flying') ? aimTarget : null;
 
   player.update(dt, moveDir, wrangle ? Math.min(strength, 0.6) : strength, time);
   herd.update(dt, player, time, bots.list);
@@ -564,7 +598,7 @@ window.addEventListener('resize', () => {
 });
 
 // debug/testing handle
-window.__cc = { player, herd, wallet, hook, lasso, input, bots, world, showSpecies, getState: () => state, getWrangle: () => wrangle };
+window.__cc = { player, herd, wallet, hook, lasso, input, bots, world, showSpecies, getState: () => state, getWrangle: () => wrangle, onLassoLand };
 
 // PWA
 if ('serviceWorker' in navigator && import.meta.env.PROD) {

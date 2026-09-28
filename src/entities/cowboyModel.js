@@ -191,6 +191,7 @@ export class SkinnedCowboy {
     this.model.updateMatrixWorld(true);
     hips.getWorldPosition(p);
     this.seatOffset = new THREE.Vector3(-p.x, -p.y + 0.02, -p.z);
+    this.hipsHeight = p.y; // hips above the soles when standing
     this.model.position.copy(this.seatOffset);
     this._state = { armPose: 'rest', time: 0, run: 0, P: 0, gallopW: 0, trotW: 0 };
     this.dyn = {
@@ -395,4 +396,112 @@ export class SkinnedCowboy {
   handWorldPos(out) {
     return this.bones.smartrigRightHand.getWorldPosition(out);
   }
+
+  _set(name, q, rate, dt) {
+    let cur = this.q.get(name);
+    if (!cur) { cur = q.clone(); this.q.set(name, cur); }
+    else cur.slerp(q, 1 - Math.exp(-rate * dt));
+    setBoneWorldRot(this, 'smartrig' + name, cur);
+  }
+
+  // Off the horse. The bot sets the group's world transform; this poses the
+  // body for: 'roped' (dragged on his back by the wrists), 'tantrum' (sitting
+  // up, pounding the ground, kicking), 'dustoff' (standing, brushing himself
+  // down), 'walk' (back to the horse) and 'mount' (the riding seat).
+  groundPose(mode, T, dt, opts = {}) {
+    dt = THREE.MathUtils.clamp(dt || 1 / 60, 1e-3, 0.05);
+    const set = (name, q, rate = 14) => this._set(name, q, rate, dt);
+    this.model.position.copy(this.seatOffset);
+    const s1 = Math.sin(T * 9), s2 = Math.sin(T * 9 + Math.PI);
+    if (mode === 'roped') {
+      // flat on his back, arms straight up to the wrists the rope holds
+      set('Hips', seq(X, 0.1 + Math.sin(T * 7) * 0.06, Y, Math.sin(T * 5) * 0.08));
+      set('Spine', seq(X, -0.12, Y, Math.sin(T * 6) * 0.1)); set('Spine1', seq(X, -0.1)); set('Spine2', seq(X, -0.08));
+      set('Neck', seq(X, -0.25)); set('Head', seq(X, -0.35, Y, Math.sin(T * 8) * 0.45));
+      set('RightShoulder', seq(Z, 0.2)); set('LeftShoulder', seq(Z, -0.2));
+      set('RightArm', seq(Z, -1.5, X, -0.1 + Math.sin(T * 6) * 0.08)); set('LeftArm', seq(Z, 1.5, X, -0.1 - Math.sin(T * 6) * 0.08));
+      set('RightForeArm', seq(X, -0.15)); set('LeftForeArm', seq(X, -0.15));
+      set('RightHand', seq(X, -0.3)); set('LeftHand', seq(X, -0.3));
+      for (const [side, s, ph] of [['Left', 1, 0], ['Right', -1, Math.PI]]) {
+        const kick = Math.max(0, Math.sin(T * 8 + ph));
+        set(side + 'UpLeg', seq(X, -0.35 - kick * 0.6, Z, s * 0.15));
+        set(side + 'Leg', seq(X, 0.5 + kick * 0.9));
+        set(side + 'Foot', seq(X, 0.3));
+      }
+    } else if (mode === 'tantrum') {
+      // sitting up, legs out, fists pounding the ground, heels drumming, head shaking
+      set('Hips', seq(X, 0.15 + Math.sin(T * 9) * 0.05));
+      set('Spine', seq(X, 0.2 + Math.sin(T * 9) * 0.06, Y, Math.sin(T * 4.5) * 0.12));
+      set('Spine1', seq(X, 0.15, Y, Math.sin(T * 4.5) * 0.1)); set('Spine2', seq(X, 0.05));
+      set('Neck', seq(X, -0.2)); set('Head', seq(X, -0.2 + Math.sin(T * 9) * 0.08, Y, Math.sin(T * 6) * 0.55, Z, Math.sin(T * 3) * 0.12));
+      for (const [side, s, ph] of [['Left', 1, 0], ['Right', -1, Math.PI]]) {
+        const pound = Math.max(0, Math.sin(T * 9 + ph));
+        set(side + 'Shoulder', seq(X, -0.15 * pound));
+        set(side + 'Arm', seq(Z, s * -1.05, X, -1.15 + pound * 0.85));
+        set(side + 'ForeArm', seq(X, -0.75 - pound * 0.25));
+        set(side + 'Hand', seq(X, -0.5));
+        const drum = Math.max(0, Math.sin(T * 10 + ph));
+        set(side + 'UpLeg', seq(X, -1.5 - drum * 0.15, Z, s * 0.18));
+        set(side + 'Leg', seq(X, 0.15 + drum * 0.35));
+        set(side + 'Foot', seq(X, 0.35));
+      }
+    } else if (mode === 'dustoff') {
+      // stood up, bent a little, brushing hat and trousers down; straightens at the end
+      const up = smooth01((T - 1.6) / 0.6);
+      set('Hips', seq(X, 0));
+      set('Spine', seq(X, 0.25 * (1 - up))); set('Spine1', seq(X, 0.2 * (1 - up))); set('Spine2', seq(X, 0.1 * (1 - up)));
+      set('Neck', seq(X, 0.1 * (1 - up))); set('Head', seq(X, 0.3 * (1 - up), Y, Math.sin(T * 2.2) * 0.25 * (1 - up)));
+      const brushR = Math.sin(T * 7), brushL = Math.sin(T * 5.5 + 1);
+      set('RightShoulder', seq(X, 0)); set('LeftShoulder', seq(X, 0));
+      set('RightArm', seq(Z, 1.25 - up * 0.2, X, (-0.45 + brushR * 0.35) * (1 - up) + up * 0.1, Y, 0.1));
+      set('RightForeArm', seq(X, (-0.85 + brushR * 0.25) * (1 - up) - up * 1.3, Y, up * -0.6));
+      set('LeftArm', seq(Z, -1.15 + up * 0.15, X, (-0.9 + brushL * 0.45) * (1 - up) + up * 0.1, Y, -0.1));
+      set('LeftForeArm', seq(X, (-1.0 + brushL * 0.2) * (1 - up) - up * 1.3, Y, up * 0.6));
+      set('RightHand', seq(X, -0.3)); set('LeftHand', seq(X, -0.3));
+      for (const [side, s] of [['Left', 1], ['Right', -1]]) {
+        set(side + 'UpLeg', seq(X, -0.05, Z, s * 0.08));
+        set(side + 'Leg', seq(X, 0.08));
+        set(side + 'Foot', seq(X, 0));
+      }
+    } else if (mode === 'walk') {
+      const w = opts.walk ?? 1;
+      const phi = (opts.phase ?? T * 2 * Math.PI * 1.7);
+      set('Hips', seq(Y, Math.sin(phi) * 0.06 * w, Z, Math.sin(phi) * 0.03 * w));
+      set('Spine', seq(X, 0.06, Y, -Math.sin(phi) * 0.05 * w)); set('Spine1', seq(X, 0.03)); set('Spine2', seq(X, 0));
+      set('Neck', seq(X, -0.05)); set('Head', seq(X, -0.05, Y, Math.sin(T * 1.3) * 0.1));
+      set('RightShoulder', seq(X, 0)); set('LeftShoulder', seq(X, 0));
+      set('RightArm', seq(Z, 1.4, X, Math.sin(phi) * 0.35 * w)); set('LeftArm', seq(Z, -1.4, X, -Math.sin(phi) * 0.35 * w));
+      set('RightForeArm', seq(X, -0.35 - Math.max(0, Math.sin(phi)) * 0.2 * w)); set('LeftForeArm', seq(X, -0.35 - Math.max(0, -Math.sin(phi)) * 0.2 * w));
+      set('RightHand', seq(X, -0.2)); set('LeftHand', seq(X, -0.2));
+      for (const [side, s, ph] of [['Left', 1, 0], ['Right', -1, Math.PI]]) {
+        const sw = Math.sin(phi + ph);
+        set(side + 'UpLeg', seq(X, -sw * 0.5 * w, Z, s * 0.06));
+        set(side + 'Leg', seq(X, Math.max(0, -Math.sin(phi + ph - 0.9)) * 0.9 * w + 0.05));
+        set(side + 'Foot', seq(X, 0.05 + Math.max(0, -sw) * 0.2 * w));
+      }
+    } else {
+      // 'mount': the riding seat, hands to the reins
+      set('Hips', seq(X, 0)); set('Spine', seq(X, 0.05)); set('Spine1', seq(X, 0.05)); set('Spine2', seq(X, 0.02));
+      set('Neck', seq(X, -0.05)); set('Head', seq(X, -0.05));
+      set('RightShoulder', seq(X, 0)); set('LeftShoulder', seq(X, 0));
+      set('RightArm', seq(Z, 1.18, X, -0.42)); set('RightForeArm', seq(X, -0.95)); set('RightHand', seq(X, -0.2));
+      set('LeftArm', seq(Z, -1.22, X, -0.55)); set('LeftForeArm', seq(X, -1.12, Y, 0.3)); set('LeftHand', seq(X, -0.2));
+      for (const [side, s] of [['Left', 1], ['Right', -1]]) {
+        set(side + 'UpLeg', seq(X, -1.25, Z, s * 0.42)); set(side + 'Leg', seq(X, 1.35)); set(side + 'Foot', seq(X, 0.15));
+      }
+    }
+    const grip = mode === 'roped' ? 0.9 : 0.55;
+    for (const [side, s] of [['Left', -1], ['Right', 1]]) {
+      for (const f of ['Index', 'Middle', 'Ring', 'Pinky']) for (let k = 1; k <= 3; k++) set(`${side}Hand${f}${k}`, seq(Z, s * grip), 18);
+      for (let k = 1; k <= 3; k++) set(`${side}HandThumb${k}`, seq(Y, s * -0.3), 18);
+    }
+  }
+
+  // world position between the two hands (where a rope round the wrists sits)
+  wristsWorldPos(out) {
+    const a = this.bones.smartrigRightHand.getWorldPosition(out);
+    const b = this.bones.smartrigLeftHand.getWorldPosition(_wl);
+    return a.lerp(b, 0.5);
+  }
 }
+const _wl = new THREE.Vector3();

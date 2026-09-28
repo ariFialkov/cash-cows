@@ -70,8 +70,9 @@ class Bot {
     this.lasso = new Lasso(scene, world);
     this.lasso.setColor(this.tier.color);
 
-    this.state = 'roam'; // roam | hunt | throwing | wrangle
+    this.state = 'roam'; // roam | hunt | throwing | wrangle | grounded (roped off the horse)
     this.stateT = Math.random() * 6;
+    this.ground = null;  // the off-horse gag: { cowboy, mode, t, pos, yaw, puller }
     this.target = null;
     this.outcome = null;
     this.wrangleT = 0;
@@ -131,6 +132,119 @@ class Bot {
     return dist;
   }
 
+  // ---- the gag: roped off the horse by the player ----
+  canRope() {
+    return !!this.rig.cowboy && !this.ground && this.state !== 'wrangle';
+  }
+
+  // the player's loop landed on him: off the horse, dragged by the wrists
+  rope(puller, quip) {
+    if (!this.canRope()) return false;
+    if (this.state === 'throwing') this.lasso.releaseToIdle();
+    this._release(true);
+    this.lasso.releaseToIdle();
+    this.lasso.setVisible(false);
+    const cowboy = this.rig.dismountCowboy();
+    this.scene.add(cowboy.group);
+    this.speed = 0; this._turnRate = 0;
+    this.armPose = 'rest';
+    this.state = 'grounded';
+    this.ground = {
+      cowboy, mode: 'roped', t: 0, quip,
+      pos: this.pos.clone().add(new THREE.Vector3(Math.sin(this.heading + 1.4), 0, Math.cos(this.heading + 1.4)).multiplyScalar(0.9)),
+      yaw: this.heading, puller: puller.clone(), walkPhase: 0, steamT: 0, standPos: null,
+    };
+    // what the player's lasso holds on to: the rope round his wrists
+    const g = this.ground;
+    this.ropeTarget = {
+      pos: g.pos, heading: 0, size: 0.55, struggleIntensity: 0.6, kind: 'cowboy',
+      rig: { neckWorldPos: (o) => cowboy.wristsWorldPos(o) },
+    };
+    quip?.(this, g.pos, 'HEY!!');
+    return true;
+  }
+
+  // the player let go: throw a tantrum, dust off, walk back, climb on
+  release() {
+    if (!this.ground || this.ground.mode !== 'roped') return;
+    this.ground.mode = 'tantrum';
+    this.ground.t = 0;
+    this.ground.quip?.(this, this.ground.pos, 'GRRR!');
+  }
+
+  _updateGround(dt, effects, time) {
+    const g = this.ground, cb = g.cowboy;
+    g.t += dt;
+    const groundY = (x, z) => this.world.heightAt(x, z);
+    const yawQ = (yaw) => _gq.setFromAxisAngle(_up, yaw);
+    if (g.mode === 'roped') {
+      // flat on his back, head toward whoever is dragging him
+      const dir = _gd.copy(g.puller).sub(g.pos).setY(0);
+      if (dir.lengthSq() > 1e-4) dir.normalize(); else dir.set(0, 0, 1);
+      _gx.crossVectors(dir, _up).normalize();
+      _gm.makeBasis(_gx, dir, _up);
+      cb.group.quaternion.setFromRotationMatrix(_gm);
+      cb.group.position.set(g.pos.x, groundY(g.pos.x, g.pos.z) + 0.16, g.pos.z);
+      g.yaw = Math.atan2(dir.x, dir.z);
+      cb.groundPose('roped', g.t, dt);
+    } else if (g.mode === 'tantrum') {
+      cb.group.quaternion.copy(yawQ(g.yaw));
+      cb.group.position.set(g.pos.x, groundY(g.pos.x, g.pos.z) + 0.1, g.pos.z);
+      cb.groundPose('tantrum', g.t, dt);
+      // steam from the ears
+      g.steamT -= dt;
+      if (g.steamT <= 0 && effects) {
+        g.steamT = 0.09;
+        const head = cb.bones.smartrigHead.getWorldPosition(_gh);
+        const right = _gx.set(1, 0, 0).applyQuaternion(cb.group.quaternion);
+        for (const s of [1, -1]) {
+          _gd.copy(head).addScaledVector(right, s * 0.11).addScaledVector(_up, 0.02);
+          effects.burst(_gd, 0xf4f4f4, 1, 0.35 + Math.random() * 0.3, 1.3);
+        }
+      }
+      if (g.t > 3.4) { g.mode = 'dustoff'; g.t = 0; g.quip?.(this, g.pos, '...fine.'); }
+    } else if (g.mode === 'dustoff') {
+      cb.group.quaternion.copy(yawQ(g.yaw));
+      cb.group.position.set(g.pos.x, groundY(g.pos.x, g.pos.z) + cb.hipsHeight - 0.02, g.pos.z);
+      cb.groundPose('dustoff', g.t, dt);
+      if (g.t > 2.4) { g.mode = 'walk'; g.t = 0; }
+    } else if (g.mode === 'walk') {
+      // back to the horse's near side
+      const side = _gd.set(Math.sin(this.heading + Math.PI / 2), 0, Math.cos(this.heading + Math.PI / 2)).multiplyScalar(0.85);
+      const tx = this.pos.x + side.x, tz = this.pos.z + side.z;
+      const dx = tx - g.pos.x, dz = tz - g.pos.z, dist = Math.hypot(dx, dz);
+      const want = Math.atan2(dx, dz);
+      let d = want - g.yaw; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2;
+      g.yaw += THREE.MathUtils.clamp(d, -4 * dt, 4 * dt);
+      const sp = dist > 0.25 ? 1.5 : 0;
+      g.pos.x += Math.sin(g.yaw) * sp * dt; g.pos.z += Math.cos(g.yaw) * sp * dt;
+      g.walkPhase += dt * 2 * Math.PI * 1.7 * (sp > 0 ? 1 : 0);
+      cb.group.quaternion.copy(yawQ(g.yaw));
+      cb.group.position.set(g.pos.x, groundY(g.pos.x, g.pos.z) + cb.hipsHeight - 0.02 + Math.abs(Math.sin(g.walkPhase)) * 0.02, g.pos.z);
+      cb.groundPose('walk', g.t, dt, { walk: sp > 0 ? 1 : 0, phase: g.walkPhase });
+      if (dist <= 0.25 || g.t > 12) { g.mode = 'mount'; g.t = 0; g.standPos = cb.group.position.clone(); g.standQ = cb.group.quaternion.clone(); }
+    } else if (g.mode === 'mount') {
+      // a polite hop up into the saddle
+      const k = Math.min(1, g.t / 0.7), e = k * k * (3 - 2 * k);
+      const seat = this.rig.seatWorld(_gh, _gq2);
+      cb.group.position.lerpVectors(g.standPos, seat, e);
+      cb.group.position.y += Math.sin(e * Math.PI) * 0.35;
+      cb.group.quaternion.copy(g.standQ).slerp(_gq2, e);
+      cb.groundPose('mount', g.t, dt);
+      if (k >= 1) {
+        this.scene.remove(cb.group);
+        this.rig.mountCowboy(cb);
+        this.lasso.setVisible(true);
+        this.ground = null;
+        this.ropeTarget = null;
+        this.state = 'roam';
+        this.stateT = 3 + Math.random() * 4;
+        this._pickWaypoint();
+        g.quip?.(this, this.pos, 'We\'re square.');
+      }
+    }
+  }
+
   _hook(cow) {
     cow.state = 'lassoed';
     cow.struggleIntensity = 0.5;
@@ -145,11 +259,16 @@ class Bot {
     const toPlayer = this.pos.distanceTo(player.pos);
     const vis = toPlayer < VIS_DIST;
     this.obj.visible = vis;
-    this.lasso.rope.visible = this.lasso.loop.visible = this.lasso.honda.visible = vis;
+    if (!this.ground) this.lasso.setVisible(vis);
 
     this.stateT -= dt;
 
-    if (this.state === 'roam') {
+    if (this.state === 'grounded') {
+      // the horse waits where it stands; the cowboy does his thing on foot
+      this._moveToward(dt, this.pos.x, this.pos.z, 0);
+      this.armPose = 'rest';
+      this._updateGround(dt, effects, time);
+    } else if (this.state === 'roam') {
       const dist = this._moveToward(dt, this.wp[0], this.wp[1], this.move.maxSpeed * 0.58);
       this.armPose = 'spin';
       if (dist < 6 || this.stateT <= 0) {
@@ -248,16 +367,31 @@ class Bot {
       this.rig.lookTarget = this.target && (this.state === 'hunt' || this.state === 'throwing' || this.state === 'wrangle') ? this.target.pos : null;
       this.rig.animate(dt, this.speed, this._turnRate, this.armPose, time);
       applyJumpPose(this);
-      this.lasso.update(dt, this, time);
+      if (!this.ground) this.lasso.update(dt, this, time);
     }
   }
 }
 
+const _gq = new THREE.Quaternion(), _gq2 = new THREE.Quaternion(), _up = new THREE.Vector3(0, 1, 0);
+const _gd = new THREE.Vector3(), _gx = new THREE.Vector3(), _gh = new THREE.Vector3(), _gm = new THREE.Matrix4();
+
 export class Bots {
-  constructor(scene, world, onWin) {
+  constructor(scene, world, onWin, onQuip = null) {
     this.onWin = onWin;
+    this.onQuip = onQuip;
     this.list = [];
     for (let i = 0; i < BOT_COUNT; i++) this.list.push(new Bot(scene, world, i));
+  }
+
+  // nearest ropeable rival whose horse is within `radius` of a ground point
+  near(point, radius) {
+    let best = null, bestD = radius;
+    for (const b of this.list) {
+      if (!b.canRope()) continue;
+      const d = Math.hypot(b.pos.x - point.x, b.pos.z - point.z);
+      if (d < bestD) { best = b; bestD = d; }
+    }
+    return best;
   }
 
   update(dt, player, herd, effects, time) {
