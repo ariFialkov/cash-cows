@@ -422,31 +422,60 @@ export class SkinnedCowboy {
     const n = (k, f = 1) => Math.sin(T * (0.9 + (k % 5) * 0.37) * f + D.seed * k) * 0.55 + Math.sin(T * (1.7 + (k % 3) * 0.61) * f + D.seed * 0.5 * k) * 0.45;
 
     if (mode === 'roped') {
-      // flat on his back, pulled by the wrists. sp: drag speed 0..1, jerk: a
-      // tension tug 0..1 (arms snap straight, body jolts), kick: a leg kick 0..1
-      const sp = opts.speed ?? 0.5, jerk = opts.jerk ?? 0, kick = opts.kick ?? 0, kickSide = opts.kickSide ?? 1;
+      // dragged by one limb (opts.limb = { kind: 'hand'|'ankle', side }):
+      // that limb is stretched straight toward the rope; everything else
+      // trails behind, loose and flailing. sp: drag speed 0..1, jerk: a
+      // tension tug 0..1 (the caught limb snaps taut, the body jolts),
+      // kick: a free-leg kick 0..1
+      const sp = opts.speed ?? 0.5, jerk = opts.jerk ?? 0, kick = opts.kick ?? 0;
+      const limb = opts.limb || { kind: 'hand', side: 'Right' };
+      const byHand = limb.kind === 'hand';
       const flail = 0.35 + sp * 0.65;
-      set('Hips', seq(X, 0.05 + n(1) * 0.08 * flail, Y, n(2) * 0.12 * flail, Z, n(3) * 0.08 * flail));
-      set('Spine', seq(X, -0.1 - jerk * 0.15 + n(4) * 0.06 * flail, Y, n(5) * 0.18 * flail, Z, n(6) * 0.06 * flail));
-      set('Spine1', seq(X, -0.08 - jerk * 0.1, Y, n(7) * 0.12 * flail));
-      set('Spine2', seq(X, -0.06, Y, n(8) * 0.08 * flail));
-      set('Neck', seq(X, -0.3 + n(9) * 0.1, Y, n(10) * 0.25 * flail));
-      set('Head', seq(X, -0.4 + jerk * 0.15 + n(11) * 0.15 * flail, Y, n(12, 1.4) * 0.5 * flail, Z, n(13) * 0.25 * flail));
-      // arms: straight to the rope, shoulders yanked up on a jerk, elbows giving a little between
+      // the body arches toward the caught limb on a jerk
+      const arch = byHand ? -1 : 1;
+      set('Hips', seq(X, arch * 0.06 + n(1) * 0.1 * flail, Y, n(2) * 0.14 * flail, Z, n(3) * 0.1 * flail));
+      set('Spine', seq(X, arch * (0.08 + jerk * 0.14) + n(4) * 0.08 * flail, Y, n(5) * 0.2 * flail, Z, n(6) * 0.08 * flail));
+      set('Spine1', seq(X, arch * (0.06 + jerk * 0.1), Y, n(7) * 0.14 * flail));
+      set('Spine2', seq(X, arch * 0.04, Y, n(8) * 0.1 * flail));
+      // head lolls; when dragged by the ankle it trails back, chin up
+      set('Neck', seq(X, (byHand ? -0.3 : 0.15) + n(9) * 0.12 * flail, Y, n(10) * 0.3 * flail));
+      set('Head', seq(X, (byHand ? -0.4 + jerk * 0.15 : 0.25) + n(11) * 0.18 * flail, Y, n(12, 1.4) * 0.55 * flail, Z, n(13) * 0.3 * flail));
       for (const [side, s, k] of [['Right', -1, 14], ['Left', 1, 20]]) {
-        set(side + 'Shoulder', seq(Z, -s * (0.15 + jerk * 0.2)));
-        set(side + 'Arm', seq(Z, -s * 1.5, X, -0.12 + n(k) * 0.12 * flail - jerk * 0.1, Y, n(k + 1) * 0.15 * flail));
-        set(side + 'ForeArm', seq(X, -0.35 * (1 - jerk) + n(k + 2) * 0.15 * flail * (1 - jerk), Y, s * 0.1));
-        set(side + 'Hand', seq(X, -0.35, Z, n(k + 3) * 0.2 * flail));
+        if (byHand && side === limb.side) {
+          // the caught arm: straight overhead to the rope, yanked at the shoulder on a jerk
+          set(side + 'Shoulder', seq(Z, -s * (0.15 + jerk * 0.25)));
+          set(side + 'Arm', seq(Z, -s * 1.5, X, -0.1 + n(k) * 0.06 - jerk * 0.08, Y, n(k + 1) * 0.06));
+          set(side + 'ForeArm', seq(X, -0.12 * (1 - jerk) + n(k + 2) * 0.06));
+          set(side + 'Hand', seq(X, -0.4, Z, n(k + 3) * 0.1));
+        } else if (byHand) {
+          // the free arm flops about beside him, elbow loose
+          set(side + 'Shoulder', seq(Z, s * 0.05 * n(k)));
+          set(side + 'Arm', seq(Z, -s * (0.55 + Math.max(0, n(k)) * 0.5 * flail), X, 0.2 + n(k + 1) * 0.5 * flail, Y, n(k + 4) * 0.3 * flail));
+          set(side + 'ForeArm', seq(X, -0.5 - Math.max(0, n(k + 2)) * 0.9 * flail, Y, s * 0.2));
+          set(side + 'Hand', seq(X, -0.3 + n(k + 3) * 0.4 * flail, Z, n(k + 5) * 0.3 * flail));
+        } else {
+          // dragged by the ankle: both arms trail loosely above the head, flailing
+          set(side + 'Shoulder', seq(Z, -s * 0.1));
+          set(side + 'Arm', seq(Z, -s * (1.05 + n(k) * 0.35 * flail), X, -0.2 + n(k + 1) * 0.45 * flail, Y, n(k + 4) * 0.3 * flail));
+          set(side + 'ForeArm', seq(X, -0.35 - Math.max(0, n(k + 2)) * 0.8 * flail, Y, s * 0.15));
+          set(side + 'Hand', seq(X, -0.3 + n(k + 3) * 0.4 * flail, Z, n(k + 5) * 0.3 * flail));
+        }
       }
-      // legs trail loose, splay, and kick now and then; knees never fold
-      // further than the thigh lifts, so the feet stay off the ground
       for (const [side, s, k] of [['Left', 1, 26], ['Right', -1, 32]]) {
-        const kk = kickSide === s ? kick : kick * 0.3;
-        const lift = 0.25 + Math.max(0, n(k)) * 0.35 * flail + kk * 0.8;
-        set(side + 'UpLeg', seq(X, -lift, Z, s * (0.12 + n(k + 1) * 0.18 * flail), Y, n(k + 2) * 0.15 * flail));
-        set(side + 'Leg', seq(X, Math.min(lift * 0.95, 0.35 + kk * 0.7 + Math.max(0, n(k + 3)) * 0.3 * flail)));
-        set(side + 'Foot', seq(X, 0.35 + n(k + 4) * 0.25 * flail));
+        if (!byHand && side === limb.side) {
+          // the caught leg: straight to the rope, toes pointed, the hip yanked on a jerk
+          set(side + 'UpLeg', seq(X, 0.05 + jerk * 0.1 + n(k) * 0.05, Z, s * 0.05));
+          set(side + 'Leg', seq(X, 0.06 * (1 - jerk) + Math.max(0, n(k + 3)) * 0.05));
+          set(side + 'Foot', seq(X, 0.55 + n(k + 4) * 0.1));
+        } else {
+          // free legs trail loose, splay and kick now and then; knees never
+          // fold further than the thigh lifts, so the feet stay off the ground
+          const kk = (opts.kickSide ?? 1) === s ? kick : kick * 0.3;
+          const lift = (byHand ? 0.25 : 0.35) + Math.max(0, n(k)) * 0.4 * flail + kk * 0.8;
+          set(side + 'UpLeg', seq(X, -lift, Z, s * (0.15 + n(k + 1) * 0.2 * flail), Y, n(k + 2) * 0.15 * flail));
+          set(side + 'Leg', seq(X, Math.min(lift * 0.95, 0.35 + kk * 0.7 + Math.max(0, n(k + 3)) * 0.35 * flail)));
+          set(side + 'Foot', seq(X, 0.35 + n(k + 4) * 0.25 * flail));
+        }
       }
     } else if (mode === 'tantrum') {
       // sit up first (0.6 s), then pound the ground, drum the heels, shake the head
@@ -541,11 +570,16 @@ export class SkinnedCowboy {
     return lift;
   }
 
-  // world position between the two hands (where a rope round the wrists sits)
-  wristsWorldPos(out) {
-    const a = this.bones.smartrigRightHand.getWorldPosition(out);
-    const b = this.bones.smartrigLeftHand.getWorldPosition(_wl);
-    return a.lerp(b, 0.5);
+  // the caught limb as a ring the lasso cinches onto: centred on the wrist
+  // or ankle joint, normal along the limb, a wrist's / ankle's radius
+  limbRing(limb, out) {
+    const joint = this.bones['smartrig' + limb.side + (limb.kind === 'hand' ? 'Hand' : 'Foot')];
+    const parent = this.bones['smartrig' + limb.side + (limb.kind === 'hand' ? 'ForeArm' : 'Leg')];
+    joint.getWorldPosition(out.center);
+    parent.getWorldPosition(_wl);
+    out.normal.copy(out.center).sub(_wl).normalize();
+    out.radius = limb.kind === 'hand' ? 0.04 : 0.052;
+    return out;
   }
 }
 const _wl = new THREE.Vector3(), _fp = new THREE.Vector3();

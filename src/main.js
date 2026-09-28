@@ -411,9 +411,10 @@ function updateWrangle(dt, time) {
     g.puller.copy(player.pos);
     const toP = new THREE.Vector3().subVectors(player.pos, g.pos).setY(0);
     const d = toP.length();
-    if (d > 2.3) {
+    // his body centre trails ~3.6 m back so the caught limb clears the horse
+    if (d > 3.6) {
       toP.divideScalar(d);
-      g.pos.addScaledVector(toP, Math.min(d - 2.3, 7 * dt));
+      g.pos.addScaledVector(toP, Math.min(d - 3.6, 7 * dt));
       // bumping along the ground
       g.pos.x += Math.sin(time * 9) * 0.15 * dt; g.pos.z += Math.cos(time * 7) * 0.15 * dt;
     }

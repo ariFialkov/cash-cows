@@ -64,8 +64,10 @@ the throw while aiming.
   alone, and cows flee from whichever rider is closest.
 - **Rope a rival** (just for laughs, no bet, no payout): land the loop on a
   bot cowboy and he comes off his horse and gets dragged along behind you for
-  a couple of seconds, flailing like a ragdoll (the faster you drag, the more
-  he flails, with tension jerks and kicks). Let go and he sits up and throws
+  a couple of seconds by one limb: the loop cinches round a random wrist or
+  ankle and that limb leads, the rest of him trailing and flailing like a
+  ragdoll (the faster you drag, the more he flails, with tension jerks and
+  kicks). Let go and he sits up and throws
   a tantrum, steam coming out of his ears, then gets up, dusts himself off
   and jogs back to his horse, which walks over to meet him halfway; he hops
   on and carries on as if nothing happened. Every phase blends into the next

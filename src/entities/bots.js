@@ -157,11 +157,15 @@ class Bot {
     };
     this.ground.lastPos = this.ground.pos.clone();
     this._startBlend(this.ground, cowboy, 0.45); // yanked off the saddle onto the ground
-    // what the player's lasso holds on to: the rope round his wrists
+    // the loop caught one limb: a wrist or an ankle, either side
     const g = this.ground;
+    g.limb = { kind: Math.random() < 0.5 ? 'hand' : 'ankle', side: Math.random() < 0.5 ? 'Left' : 'Right' };
     this.ropeTarget = {
       pos: g.pos, heading: 0, size: 0.55, struggleIntensity: 0.6, kind: 'cowboy',
-      rig: { neckWorldPos: (o) => cowboy.wristsWorldPos(o) },
+      rig: {
+        neckWorldPos: (o) => cowboy.limbRing(g.limb, _ring).center.clone(),
+        neckRing: (o) => cowboy.limbRing(g.limb, o),
+      },
     };
     quip?.(this, g.pos, 'HEY!!');
     return true;
@@ -213,8 +217,11 @@ class Bot {
       if (g.kickT <= 0) { g.kickT = 0.6 + Math.random() * 1.3; g.kickK = 1; g.kickSide = Math.random() < 0.5 ? 1 : -1; }
       g.jerkK = Math.max(0, g.jerkK - dt * 3.2); g.kickK = Math.max(0, g.kickK - dt * 2.2);
       const jerk = Math.sin(Math.min(1, g.jerkK) * Math.PI), kick = Math.sin(Math.min(1, g.kickK) * Math.PI);
-      _gx.crossVectors(dir, _up).normalize();
-      _gm.makeBasis(_gx, dir, _up);
+      // on his back, the caught limb leading: head toward the rope when
+      // dragged by a hand, feet toward it when dragged by an ankle
+      _gv.copy(dir).multiplyScalar(g.limb.kind === 'hand' ? 1 : -1);
+      _gx.crossVectors(_gv, _up).normalize();
+      _gm.makeBasis(_gx, _gv, _up);
       _gq2.setFromRotationMatrix(_gm);
       // roll about the body axis with the flailing, and a bump with the speed
       const roll = Math.sin(time * 2.3 + this.pos.x) * 0.22 * g.speed + Math.sin(time * 5.1) * 0.08 * g.speed;
@@ -222,7 +229,7 @@ class Bot {
       _gh.set(g.pos.x, groundY(g.pos.x, g.pos.z) + 0.17 + Math.abs(Math.sin(time * 7.3)) * 0.03 * g.speed, g.pos.z);
       this._placeCowboy(g, cb, _gh, _gq2, dt);
       g.yaw = Math.atan2(dir.x, dir.z);
-      cb.groundPose('roped', g.t, dt, { speed: g.speed, jerk, kick, kickSide: g.kickSide });
+      cb.groundPose('roped', g.t, dt, { speed: g.speed, jerk, kick, kickSide: g.kickSide, limb: g.limb });
     } else if (g.mode === 'tantrum') {
       _gh.set(g.pos.x, groundY(g.pos.x, g.pos.z) + 0.1, g.pos.z);
       this._placeCowboy(g, cb, _gh, yawQ(g.yaw), dt);
@@ -427,6 +434,7 @@ class Bot {
 
 const _gq = new THREE.Quaternion(), _gq2 = new THREE.Quaternion(), _up = new THREE.Vector3(0, 1, 0);
 const _gd = new THREE.Vector3(), _gx = new THREE.Vector3(), _gh = new THREE.Vector3(), _gv = new THREE.Vector3(), _gm = new THREE.Matrix4();
+const _ring = { center: new THREE.Vector3(), normal: new THREE.Vector3(), radius: 0.05 };
 
 export class Bots {
   constructor(scene, world, onWin, onQuip = null) {

@@ -41,18 +41,20 @@ if (groundMode) {
   const cb = new SkinnedCowboy(ct, outfit);
   scene.add(cb.group);
   const span = parseFloat(q.get('span') || '2'), dt = 1 / 60;
+  const limb = { kind: q.get('limb') || 'hand', side: q.get('side') || 'Right' };
   camera.position.set(4.5, 2.0, 4.0); camera.lookAt(0, 0.7, 0);
   let t = 0;
   const place = () => {
     if (groundMode === 'roped') {
-      const m = new THREE.Matrix4().makeBasis(new THREE.Vector3(-1, 0, 0), new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 1, 0));
+      const f = limb.kind === 'hand' ? 1 : -1;
+      const m = new THREE.Matrix4().makeBasis(new THREE.Vector3(-f, 0, 0), new THREE.Vector3(0, 0, f), new THREE.Vector3(0, 1, 0));
       cb.group.quaternion.setFromRotationMatrix(m); cb.group.position.set(0, 0.16, 0);
     } else if (groundMode === 'tantrum') { cb.group.quaternion.identity(); cb.group.position.set(0, 0.1, 0); }
     else { cb.group.quaternion.identity(); cb.group.position.set(0, cb.hipsHeight - 0.02, 0); }
   };
   for (let i = 0; i < FR; i++) {
     const until = t + span / FR;
-    while (t < until) { place(); cb.groundPose(groundMode, t, dt, { walk: 1, phase: t * 2 * Math.PI * 2.6, speed: 0.8, jerk: Math.max(0, Math.sin(t * 4)), kick: Math.max(0, Math.sin(t * 3 + 1)), kickSide: 1 }); cb.floorClamp(() => 0, 0.04); t += dt; }
+    while (t < until) { place(); cb.groundPose(groundMode, t, dt, { walk: 1, phase: t * 2 * Math.PI * 2.6, speed: 0.8, jerk: Math.max(0, Math.sin(t * 4)), kick: Math.max(0, Math.sin(t * 3 + 1)), kickSide: 1, limb }); cb.floorClamp(() => 0, 0.04); t += dt; }
     snap(i);
   }
 } else if (stand) {
