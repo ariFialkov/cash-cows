@@ -55,6 +55,8 @@ class Bot {
     const [sx, sz] = world.randomPoint ? world.randomPoint({ inPen: i < 3, minFromCenter: 40 }) : [0, 0];
     this.pos = new THREE.Vector3(sx, 0, sz);
     this._prev = new THREE.Vector3();
+    this.grade = 0;
+    this.pace = 1;
     this.heading = Math.random() * Math.PI * 2;
     this.speed = 0;
     this._turnRate = 0;
@@ -120,9 +122,14 @@ class Bot {
       this._turnRate *= 1 - Math.min(1, dt * 8);
     }
     const wade = this.world.waterDepthAt ? 1 - Math.min(0.55, this.world.waterDepthAt(this.pos.x, this.pos.z) * 0.6) : 1;
+    if (this.world.gradeAlong) {
+      const g = this.world.gradeAlong(this.pos.x, this.pos.z, this.heading);
+      this.grade += (g - this.grade) * (1 - Math.exp(-dt * 6));
+    }
+    this.pace = wade * (this.world.paceFactor ? this.world.paceFactor(this.grade) : 1);
     this._prev.copy(this.pos);
-    this.pos.x += Math.sin(this.heading) * this.speed * wade * dt;
-    this.pos.z += Math.cos(this.heading) * this.speed * wade * dt;
+    this.pos.x += Math.sin(this.heading) * this.speed * this.pace * dt;
+    this.pos.z += Math.cos(this.heading) * this.speed * this.pace * dt;
     if (this.world.confine) this.world.confine(this.pos, this._prev, 1.0);
     else {
       const B = PEN_HALF - 2;
@@ -430,7 +437,7 @@ class Bot {
       // the cowboy follows the rope's spin and watches the cow he's working
       this.rig.lassoAngle = this.lasso.spinAngle;
       this.rig.lookTarget = this.target && (this.state === 'hunt' || this.state === 'throwing' || this.state === 'wrangle') ? this.target.pos : null;
-      this.rig.animate(dt, this.speed, this._turnRate, this.armPose, time);
+      this.rig.animate(dt, this.speed * this.pace, this._turnRate, this.armPose, time);
       applyJumpPose(this);
       if (!this.ground) this.lasso.update(dt, this, time);
     }

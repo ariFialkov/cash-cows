@@ -9,19 +9,15 @@ import * as THREE from 'three';
 import { mulberry32 } from '../core/rng.js';
 
 const VARIANTS = [
-  { blades: 6, height: 0.72, headed: false, spread: 0.07, lean: 0.55, wBase: 0.036 },
-  { blades: 7, height: 0.42, headed: false, spread: 0.1, lean: 0.9, wBase: 0.042 },
-  { blades: 5, height: 0.66, headed: true, spread: 0.06, lean: 0.4, wBase: 0.03 },
-  { blades: 7, height: 0.8, headed: true, spread: 0.16, lean: 0.5, wBase: 0.05 },   // far tier: bigger, sparser
+  { blades: 7, height: 0.78, headed: false, spread: 0.15, lean: 0.55, wBase: 0.048 },   // tall bare long grass
+  { blades: 7, height: 0.8, headed: true, spread: 0.16, lean: 0.5, wBase: 0.05 },      // tall with seed heads
 ];
 
-// carpet layers: three dense variants close in (with brushing physics), and a
-// sparse ring of big tufts out to 90 m so the meadow doesn't end in a line
+// sparse tufts of long grass out to 90 m (most bare, some headed), all with
+// brushing physics so the ones you ride through bend and wobble back
 const LAYERS = [
-  { variant: 0, cell: 2.5, radius: 16, per: 2, scale: 1, fadeIn: [0, 0], fadeOut: [31, 39], physics: true },
-  { variant: 1, cell: 2.5, radius: 16, per: 2, scale: 1, fadeIn: [0, 0], fadeOut: [31, 39], physics: true },
-  { variant: 2, cell: 2.5, radius: 16, per: 2, scale: 1, fadeIn: [0, 0], fadeOut: [31, 39], physics: true },
-  { variant: 3, cell: 5, radius: 18, per: 1, scale: 1.45, fadeIn: [28, 40], fadeOut: [80, 89], physics: false },
+  { variant: 0, cell: 5, radius: 18, per: 1, scale: 1.45, fadeIn: [0, 0], fadeOut: [80, 89], physics: true },
+  { variant: 1, cell: 7, radius: 13, per: 1, scale: 1.5, fadeIn: [0, 0], fadeOut: [80, 89], physics: true },
 ];
 
 const _m = new THREE.Matrix4();
@@ -142,6 +138,8 @@ export class Grass {
                     + sin(uTime * 0.7 + root.z * 0.12) * 0.4;
             vec2 sway = vec2(0.045 + g * 0.06, 0.02 + g * 0.035);
             mvPosition.xz += (aBend + sway) * kk;
+            // a pushed-over blade arcs down as well as sideways
+            mvPosition.y -= dot(aBend, aBend) / (2.6 * uBladeH) * kk;
             mvPosition = modelViewMatrix * mvPosition;
             gl_Position = projectionMatrix * mvPosition;
           `);
@@ -224,7 +222,7 @@ export class Grass {
 
     // brushing: bodies push nearby tufts over (radially, and along their motion)
     for (const m of movers) {
-      const R = m.r + 0.5;
+      const R = m.r + 0.9;
       const sp = Math.hypot(m.vx, m.vz);
       const ux = sp > 1e-3 ? m.vx / sp : 0, uz = sp > 1e-3 ? m.vz / sp : 0;
       const drive = Math.min(1, 0.35 + sp / 5);
@@ -242,15 +240,15 @@ export class Grass {
           const push = (1 - d / R) * drive;
           const rx = d > 1e-3 ? dx / d : 0, rz = d > 1e-3 ? dz / d : 0;
           // a held-down force while the body is over it, plus a flick along its motion
-          lay.vx[slot] += ((rx * 0.5 + ux * 0.9) * 26 * push) * dt;
-          lay.vz[slot] += ((rz * 0.5 + uz * 0.9) * 26 * push) * dt;
+          lay.vx[slot] += ((rx * 0.6 + ux * 1.0) * 52 * push) * dt;
+          lay.vz[slot] += ((rz * 0.6 + uz * 1.0) * 52 * push) * dt;
           lay.active.add(slot);
         }
       }
     }
 
-    // spring back: under-damped so the blades wobble upright
-    const k = 46, c = 3.6;
+    // spring back: under-damped so the blades wobble upright for a couple of swings
+    const k = 34, c = 2.6;
     for (const lay of this.layers) {
       if (!lay.active.size) continue;
       for (const slot of lay.active) {
@@ -258,7 +256,7 @@ export class Grass {
         vx += (-k * bx - c * vx) * dt; vz += (-k * bz - c * vz) * dt;
         bx += vx * dt; bz += vz * dt;
         const l = Math.hypot(bx, bz);
-        if (l > 0.75) { bx *= 0.75 / l; bz *= 0.75 / l; vx *= 0.5; vz *= 0.5; }
+        if (l > 1.15) { bx *= 1.15 / l; bz *= 1.15 / l; vx *= 0.5; vz *= 0.5; }
         if (l < 0.004 && Math.abs(vx) + Math.abs(vz) < 0.02) { bx = bz = vx = vz = 0; lay.active.delete(slot); }
         lay.bx[slot] = bx; lay.bz[slot] = bz; lay.vx[slot] = vx; lay.vz[slot] = vz;
         lay.bend.setXY(slot, bx, bz);

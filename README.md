@@ -189,15 +189,20 @@ Monte Carlo (2M draws per cow type ⇒ 0.952–0.962 across every type/strategy)
   camera and the rider dissolve with a screen-door dither so the woods never
   hide the horse. The chase camera eases down from 44° to 24° above the
   horizon as the horse gallops, opening up the ridges and the valley ahead.
-- **Long grass with brushing physics.** Tufts of tapered, curving blades in
-  three variants (tall bare, short and wide, seed-headed) are hashed into
-  2.5 m cells around the rider (two of each per cell, toroidally addressed
-  so tufts keep their state as the window slides) with a sparse ring of big
-  tufts out to 90 m; they sway in the wind on the GPU and fade at the edges.
-  Every near tuft carries a spring: any body moving through the carpet
-  (player, rivals, cattle, a dragged cowboy) pushes the blades over radially
-  and along its motion, and an under-damped spring wobbles them back
-  upright. The grass only reacts — nothing pushes back on the horse.
+- **Long grass with brushing physics.** Sparse tufts of tall tapered,
+  curving blades (most bare, some with seed heads) are hashed into 5–7 m
+  cells out to 90 m around the rider (toroidally addressed so tufts keep
+  their state as the window slides); they sway in the wind on the GPU and
+  fade at the edge. Every tuft carries a spring: any body moving through
+  (player, rivals, cattle, a dragged cowboy) pushes the blades over
+  radially and along its motion — the tips arc down as they go over — and
+  an under-damped spring wobbles them back upright over a couple of swings.
+  The grass only reacts — nothing pushes back on the horse.
+- **Hills cost pace.** Riders and cattle read the ground grade along their
+  heading each frame (smoothed): ground speed projects onto the horizontal,
+  a climb slows them (a 1-in-4 grade runs at ~55%) and a descent gives a
+  controlled bit back (~120% at most), with the gait cadence following the
+  actual pace.
 - The rope is a per-frame rebuilt CatmullRom tube (80 segments, 8 sides)
   over a 26-particle verlet rope with bending constraints, so it curves
   instead of kinking, and the particles are kept out of the animals by three

@@ -353,6 +353,8 @@ export class Cow {
     // bigger cows are a touch slower — herd basics still apply
     this.runSpeed = (kind === 'crash' ? 7.6 : 8.6) - (this.size - 1) * 1.6;
     this._prev = new THREE.Vector3(x, 0, z);
+    this.grade = 0;
+    this.pace = 1;
   }
 
   // cattle won't walk into deep water: bend the heading toward the shallower side
@@ -487,9 +489,15 @@ export class Cow {
     this.heading += THREE.MathUtils.clamp(d, -3.2 * dt, 3.2 * dt);
     this.speed += (targetSpeed - this.speed) * Math.min(1, dt * 4);
 
+    // hills: cattle labour up a climb and only pick up a little on the way down
+    if (this.world.gradeAlong && this.speed > 0.2) {
+      const g = this.world.gradeAlong(this.pos.x, this.pos.z, this.heading, 1.2);
+      this.grade += (g - this.grade) * (1 - Math.exp(-dt * 6));
+      this.pace = this.world.paceFactor(this.grade);
+    }
     this._prev.copy(this.pos);
-    this.pos.x += Math.sin(this.heading) * this.speed * dt;
-    this.pos.z += Math.cos(this.heading) * this.speed * dt;
+    this.pos.x += Math.sin(this.heading) * this.speed * this.pace * dt;
+    this.pos.z += Math.cos(this.heading) * this.speed * this.pace * dt;
     if (this.world.confine) this.world.confine(this.pos, this._prev, 0.9);
     else {
       const B = PEN_HALF - 1.6;
@@ -502,7 +510,7 @@ export class Cow {
     // on screen anyway) so a big herd stays cheap
     if (toPlayer < 75) {
       const animState = this.speed > 0.25 ? 'move' : 'graze';
-      this.rig.animate(dt, animState, this.speed, 0, time);
+      this.rig.animate(dt, animState, this.speed * this.pace, 0, time);
     }
 
     // special cows shimmer

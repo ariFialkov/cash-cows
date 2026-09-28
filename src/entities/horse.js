@@ -571,6 +571,8 @@ export class Player {
     this.jumpCooldown = 0;
     this.landT = 0;
     this.waterDepth = 0;
+    this.grade = 0;              // smoothed ground grade along the heading
+    this.pace = 1;               // hill/water factor on horizontal speed
     this._prev = new THREE.Vector3();
   }
 
@@ -613,12 +615,18 @@ export class Player {
       this._turnRate *= 1 - Math.min(1, dt * 8);
     }
 
-    // wading: deep water drags the pace down
+    // wading: deep water drags the pace down; hills too — climbs are slow and
+    // descents only a little quicker, smoothed so the pace never jumps
     this.waterDepth = this.world.waterDepthAt ? this.world.waterDepthAt(this.pos.x, this.pos.z) : 0;
     const wade = 1 - Math.min(0.55, this.waterDepth * 0.6);
+    if (this.world.gradeAlong) {
+      const g = this.world.gradeAlong(this.pos.x, this.pos.z, this.heading);
+      this.grade += (g - this.grade) * (1 - Math.exp(-dt * 6));
+    }
+    this.pace = wade * (this.world.paceFactor ? this.world.paceFactor(this.grade) : 1);
     this._prev.copy(this.pos);
-    this.pos.x += Math.sin(this.heading) * this.speed * wade * dt;
-    this.pos.z += Math.cos(this.heading) * this.speed * wade * dt;
+    this.pos.x += Math.sin(this.heading) * this.speed * this.pace * dt;
+    this.pos.z += Math.cos(this.heading) * this.speed * this.pace * dt;
 
     // range bounds, the pen fence (open at the gates), tree trunks and buildings
     if (this.world.confine) this.world.confine(this.pos, this._prev, 1.0);
@@ -634,7 +642,7 @@ export class Player {
 
     this.obj.position.copy(this.pos);
     this.obj.rotation.y = this.heading;
-    this.rig.animate(dt, this.speed, this._turnRate, this.armPose, time);
+    this.rig.animate(dt, this.speed * this.pace, this._turnRate, this.armPose, time);
     applyJumpPose(this);
   }
 }

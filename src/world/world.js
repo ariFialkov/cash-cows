@@ -61,29 +61,46 @@ export class World {
   waterDepthAt(x, z) { return this.terrain.waterDepthAt(x, z); }
   insidePen(x, z) { return Math.abs(x) < PEN_HALF && Math.abs(z) < PEN_HALF; }
 
+  // ground grade along a heading (rise over run, positive uphill)
+  gradeAlong(x, z, heading, d = 1.6) {
+    const sx = Math.sin(heading) * d, sz = Math.cos(heading) * d;
+    return (this.heightAt(x + sx, z + sz) - this.heightAt(x - sx, z - sz)) / (2 * d);
+  }
+
+  // the pace a grade allows, as a factor on horizontal speed: ground speed
+  // projects onto the horizontal, climbs cost, and descents give a controlled
+  // bit back (a 1-in-4 climb runs at ~55%, a 1-in-4 descent at ~120%)
+  paceFactor(grade) {
+    const along = 1 / Math.sqrt(1 + grade * grade);
+    return along * (grade > 0 ? 1 / (1 + 2.6 * grade) : 1 + 0.28 * Math.min(1, -grade / 0.3));
+  }
+
   // ground fit to stand, graze or spawn on: not water, not a track or building,
   // not too steep, not deep woods
-  isOpen(x, z, forestMax = 0.45) {
+  // (remote: looser — thicker woods and steeper ground allowed)
+  isOpen(x, z, forestMax = 0.45, remote = false) {
     const T = this.terrain;
     if (Math.abs(x) > RANGE_HALF - 8 || Math.abs(z) > RANGE_HALF - 8) return false;
     if (T.kindAt(x, z) !== K_OPEN) return false;
-    if (T.forestAt(x, z) > forestMax) return false;
-    if (T.slopeAt(x, z) > 0.55) return false;
+    if (T.forestAt(x, z) > (remote ? 0.85 : forestMax)) return false;
+    if (T.slopeAt(x, z) > (remote ? 0.8 : 0.55)) return false;
     for (const s of this.statics) if (Math.hypot(x - s.x, z - s.z) < s.r + 3) return false;
     if (this._treesAt(x, z).length) return false;
     return true;
   }
 
   // random open point: inPen true/false/undefined(anywhere), keep away from a spot
-  randomPoint({ inPen, minFromCenter = 0, avoid = null, avoidR = 0, margin = 10 } = {}) {
+  // remote: prefer the far corners, woods and slopes the ordinary sampler avoids
+  randomPoint({ inPen, minFromCenter = 0, avoid = null, avoidR = 0, margin = 10, remote = false } = {}) {
     const half = inPen ? PEN_HALF - margin : RANGE_HALF - margin;
     for (let tries = 0; tries < 60; tries++) {
       const x = (Math.random() * 2 - 1) * half;
       const z = (Math.random() * 2 - 1) * half;
       if (inPen === false && this.insidePen(x, z)) continue;
       if (Math.hypot(x, z) < minFromCenter) continue;
+      if (remote && Math.max(Math.abs(x), Math.abs(z)) < PEN_HALF + 120 && tries < 40) continue;
       if (avoid && Math.hypot(x - avoid.x, z - avoid.z) < avoidR) continue;
-      if (!this.isOpen(x, z)) continue;
+      if (!this.isOpen(x, z, 0.45, remote)) continue;
       return [x, z];
     }
     return inPen === false ? [PEN_HALF + 40, PEN_HALF + 40] : [PEN_HALF * 0.5, PEN_HALF * 0.5];

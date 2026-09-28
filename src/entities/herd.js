@@ -5,9 +5,10 @@ import * as THREE from 'three';
 import { Cow, preloadCows } from './cow.js';
 import { PEN_HALF } from '../world/world.js';
 
-const TARGET_STANDARD = 150;
-const TARGET_SPECIALS = { mystery: 12, offer: 12, crash: 7 };
-const PEN_SHARE = 0.55;          // the rest graze the clearings out on the range
+const TARGET_STANDARD = 220;
+const TARGET_SPECIALS = { mystery: 14, offer: 14, crash: 8 };
+const PEN_SHARE = 0.38;          // the rest graze the clearings out on the range
+const REMOTE_SHARE = 0.25;       // ...and a few small bunches push into the woods and up the slopes
 
 export class Herd {
   constructor(scene, world) {
@@ -19,8 +20,8 @@ export class Herd {
     this._seed();
   }
 
-  _randPoint(minFromCenter, avoid, avoidR, inPen) {
-    if (this.world.randomPoint) return this.world.randomPoint({ inPen, minFromCenter, avoid, avoidR, margin: 12 });
+  _randPoint(minFromCenter, avoid, avoidR, inPen, remote = false) {
+    if (this.world.randomPoint) return this.world.randomPoint({ inPen, minFromCenter, avoid, avoidR, margin: 12, remote });
     for (let tries = 0; tries < 40; tries++) {
       const x = (Math.random() * 2 - 1) * (PEN_HALF - 12);
       const z = (Math.random() * 2 - 1) * (PEN_HALF - 12);
@@ -34,14 +35,16 @@ export class Herd {
   _seed() {
     let placed = 0;
     while (placed < TARGET_STANDARD) {
-      const herdSize = Math.min(4 + Math.floor(Math.random() * 5), TARGET_STANDARD - placed);
       const inPen = placed < TARGET_STANDARD * PEN_SHARE;
-      const [hx, hz] = this._randPoint(18, null, 0, inPen);
+      // out on the range the bunches are smaller and scattered; remote ones smaller still
+      const remote = !inPen && Math.random() < REMOTE_SHARE;
+      const herdSize = Math.min(inPen ? 4 + Math.floor(Math.random() * 5) : remote ? 1 + Math.floor(Math.random() * 3) : 3 + Math.floor(Math.random() * 4), TARGET_STANDARD - placed);
+      const [hx, hz] = this._randPoint(18, null, 0, inPen, remote);
       for (let i = 0; i < herdSize; i++) {
         const a = Math.random() * Math.PI * 2;
         const r = 2 + Math.random() * 7;
         let x = hx + Math.sin(a) * r, z = hz + Math.cos(a) * r;
-        if (this.world.isOpen && !this.world.isOpen(x, z, 0.8)) { x = hx; z = hz; }
+        if (this.world.isOpen && !this.world.isOpen(x, z, 0.85, remote)) { x = hx; z = hz; }
         else if (inPen) {
           x = THREE.MathUtils.clamp(x, -PEN_HALF + 6, PEN_HALF - 6);
           z = THREE.MathUtils.clamp(z, -PEN_HALF + 6, PEN_HALF - 6);
@@ -79,7 +82,8 @@ export class Herd {
         if (counts[k] < n) { kind = k; break; }
       }
       if (kind) {
-        const [x, z] = this._randPoint(20, player.pos, 55, Math.random() < PEN_SHARE);
+        const inPen = Math.random() < PEN_SHARE;
+        const [x, z] = this._randPoint(20, player.pos, 55, inPen, !inPen && Math.random() < REMOTE_SHARE);
         this.cows.push(new Cow(this.scene, this.world, kind, x, z));
       }
     }
