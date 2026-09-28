@@ -26,6 +26,7 @@ function layUVs(geo, length, closed) {
   const uv = geo.attributes.uv;
   for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * reps);
 }
+const smoothstep = (t) => t * t * (3 - 2 * t);
 function curveLength(pts, closed) {
   let L = 0;
   for (let i = 0; i < pts.length - 1; i++) L += pts[i].distanceTo(pts[i + 1]);
@@ -107,6 +108,9 @@ export class Lasso {
     this._loopPts = [];
     for (let i = 0; i < LOOP_PTS; i++) this._loopPts.push(new THREE.Vector3());
 
+    this._ring = { center: new THREE.Vector3(), normal: new THREE.Vector3(0, 1, 0), radius: 0.3 };
+    this.cinchT = 0;
+    this.cinchFrom = 0.6;
     this._v1 = new THREE.Vector3();
     this._v2 = new THREE.Vector3();
     this._v3 = new THREE.Vector3();
@@ -160,6 +164,9 @@ export class Lasso {
   attach(cow) {
     this.state = 'attached';
     this.attachedCow = cow;
+    // cinch: the loop closes from its landing size down onto the neck
+    this.cinchT = 0;
+    this.cinchFrom = Math.max(0.3, this.loopRadius);
   }
 
   snap() {
@@ -189,14 +196,14 @@ export class Lasso {
   }
 
   // radiusFn(theta) -> { r, lift }; hondaPhi: plane angle the rope ties in at
-  _buildLoop(center, radiusFn, hondaPhi, time_ = 0) {
+  _buildLoop(center, radiusFn, hondaPhi, time_ = 0, tight = 0) {
     for (let i = 0; i < LOOP_PTS; i++) {
       const th = (i / LOOP_PTS) * Math.PI * 2;
       // pinch the ring toward the honda so the loop hangs off the knot
       let d = th - hondaPhi;
       while (d > Math.PI) d -= Math.PI * 2;
       while (d < -Math.PI) d += Math.PI * 2;
-      const pinch = Math.exp(-(d * d) / 0.22);
+      const pinch = Math.exp(-(d * d) / 0.22) * (1 - tight);
       const { r, lift } = radiusFn(th);
       const rr = r * (1 - 0.18 * pinch);
       this._loopPts[i].copy(center)
@@ -212,8 +219,8 @@ export class Lasso {
     this.honda.rotation.set(time_ * 2.1, time_ * 1.3, 0);
     // honda point on the ring
     this._hondaPt.copy(center)
-      .addScaledVector(this._e1, Math.cos(hondaPhi) * radiusFn(hondaPhi).r * 0.86)
-      .addScaledVector(this._e2, Math.sin(hondaPhi) * radiusFn(hondaPhi).r * 0.86);
+      .addScaledVector(this._e1, Math.cos(hondaPhi) * radiusFn(hondaPhi).r * (0.86 + 0.16 * tight))
+      .addScaledVector(this._e2, Math.sin(hondaPhi) * radiusFn(hondaPhi).r * (0.86 + 0.16 * tight));
     this.honda.position.copy(this._hondaPt);
     this.loopCenter.copy(center);
   }
@@ -279,17 +286,29 @@ export class Lasso {
 
     if (this.state === 'attached' && this.attachedCow) {
       const cow = this.attachedCow;
-      const neck = cow.rig.neckWorldPos(this._v2);
-      neck.y += 0.1;
-      // ring seated around the neck, tipped with the cow's stance
-      const fwd = this._v3.set(Math.sin(cow.heading), 0.5, Math.cos(cow.heading));
-      this._basis(fwd);
-      const R = cow.size * 0.42;
-      const jig = 0.4 + cow.struggleIntensity * 0.6;
+      this.cinchT += dt;
+      const cinch = smoothstep(Math.min(1, this.cinchT / 0.32)); // 0 just landed .. 1 drawn tight
+      const ring = cow.rig.neckRing ? cow.rig.neckRing(this._ring) : null;
+      let neck, R;
+      if (ring) {
+        // seated on the neck itself: ring perpendicular to the neck axis,
+        // drawn down to the neck's measured girth plus the rope's thickness
+        neck = this._v2.copy(ring.center);
+        this._basis(ring.normal);
+        R = THREE.MathUtils.lerp(this.cinchFrom, ring.radius + ROPE_RADIUS * 1.3, cinch);
+      } else {
+        neck = cow.rig.neckWorldPos(this._v2);
+        neck.y += 0.1;
+        this._basis(this._v3.set(Math.sin(cow.heading), 0.5, Math.cos(cow.heading)));
+        R = THREE.MathUtils.lerp(this.cinchFrom, cow.size * 0.42, cinch);
+      }
+      // loose flutter while it closes; once tight only a faint creep with the struggle
+      const loose = (1 - cinch) * 0.6;
+      const jig = loose + cinch * 0.05 * (0.4 + cow.struggleIntensity * 0.6);
       this._buildLoop(neck, (th) => ({
-        r: R * (1 + 0.06 * jig * this._ripple(th, time, 11, 1.6) + 0.02 * Math.sin(time * 11)),
-        lift: R * 0.09 * jig * this._ripple(th, time, 13, 1.4),
-      }), this._planeAngleTo(hand, neck), time);
+        r: R * (1 + 0.09 * jig * this._ripple(th, time, 11, 1.6)),
+        lift: R * 0.12 * jig * this._ripple(th, time, 13, 1.4),
+      }), this._planeAngleTo(hand, neck), time, cinch);
       // working rope: modest slack that tautens as the struggle intensifies
       this._ropeSim(dt, hand, this._hondaPt, {
         slack: 1.09 - 0.06 * Math.min(1, cow.struggleIntensity),

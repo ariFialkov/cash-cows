@@ -272,4 +272,49 @@ export class SkinnedCowRig {
   neckWorldPos(out) {
     return this.bones.head.getWorldPosition(out);
   }
+
+  // The neck as a ring the lasso can cinch onto: centre on the neck axis
+  // between the throat (head bone) and the poll (skull bone), the ring's
+  // normal along that axis, radius measured once from the template mesh's
+  // half-width there (scaled by the model and this cow's size).
+  neckRing(out) {
+    const t = this.template;
+    if (this._neckR === undefined) {
+      const headT = t.scene.getObjectByName('head'), skullT = t.scene.getObjectByName('skull');
+      if (!headT || !skullT) { this._neckR = null; }
+      else {
+        const a = headT.getWorldPosition(new THREE.Vector3()), b = skullT.getWorldPosition(new THREE.Vector3());
+        const axis = b.clone().sub(a), L = axis.length(); axis.divideScalar(L);
+        const m = t.mesh, v = new THREE.Vector3(), rel = new THREE.Vector3();
+        // only the neck/head skin: vertices weighted mainly to the head or skull bones
+        const names = m.skeleton.bones.map((bn) => bn.name);
+        const si = m.geometry.attributes.skinIndex, sw = m.geometry.attributes.skinWeight;
+        const widths = [];
+        for (let i = 0; i < m.geometry.attributes.position.count; i++) {
+          let wn = 0;
+          for (let j = 0; j < 4; j++) { const nm = names[si.getComponent(i, j)]; if (nm === 'head' || nm === 'skull') wn += sw.getComponent(i, j); }
+          if (wn < 0.6) continue;
+          m.getVertexPosition(i, v).applyMatrix4(m.matrixWorld);
+          rel.copy(v).sub(a);
+          const s = rel.dot(axis) / L;
+          if (s < 0.28 || s > 0.48) continue; // mid-neck, clear of the poll and horns
+          const w = Math.abs(v.x - a.x);
+          if (w > 0.7 * t.max.x) continue;    // horns / ears reach the model's full width; the neck never does
+          // lateral half-width: the neck's dewlap and a bull's hump extend
+          // up and down along the centre line, the rope sits on the sides
+          widths.push(w);
+        }
+        const rMax = widths.length ? Math.max(...widths) : 0.05;
+        this._neckR = rMax * t.S;
+        this._neckAt = 0.4;
+      }
+    }
+    if (this._neckR === null) return null;
+    const a = this.bones.head.getWorldPosition(_na), b = this.bones.skull.getWorldPosition(_nb);
+    out.normal.copy(b).sub(a).normalize();
+    out.center.copy(a).lerp(b, this._neckAt);
+    out.radius = this._neckR * this.group.scale.x;
+    return out;
+  }
 }
+const _na = new THREE.Vector3(), _nb = new THREE.Vector3();

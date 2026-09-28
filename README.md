@@ -163,7 +163,11 @@ Monte Carlo (2M draws per cow type ⇒ 0.952–0.962 across every type/strategy)
   over a 26-particle verlet rope with bending constraints, so it curves
   instead of kinking: overhead spin at idle, a ballistic arc with trailing
   line on throw, and a taut, sagging line with a cinched loop during a
-  wrangle. The loop is a 28-point ring deformed by centrifugal lag, gravity
+  wrangle. On a catch the loop cinches: it closes from its landing size down
+  onto the neck in a third of a second, seated on a ring the cow rig measures
+  from its own model (neck axis between throat and poll, girth from the mesh's
+  half-width there) so it sits perpendicular to the neck and fits every size
+  of cow and bull. The loop is a 28-point ring deformed by centrifugal lag, gravity
   sag on the side away from the spoke and noise-driven flutter sampled on a
   circle, with a torus-knot honda. Ropes wear a procedural three-strand
   twisted texture (colour + bump, one lay per 12 cm of rope, UVs rescaled per
