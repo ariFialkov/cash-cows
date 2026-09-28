@@ -74,14 +74,25 @@ function buildLeg(parent, x, y, z, mats, front) {
   return { hip, knee, fetlock, front };
 }
 
+// Default gait profile: every multiplier 1 / offset 0 reproduces the base
+// animation exactly. Horse types override these (see game/horses.js).
+export const BASE_GAIT = { freq: 1, bob: 1, pitch: 1, legAmp: 1, kneeLift: 1, neck: 0, headBob: 1, tail: 0 };
+
 export class HorseRider {
-  constructor() {
+  // opts.virtual: build joint pivots only (no horse meshes) so a skinned
+  // model can be driven by the same animation code via retargeting.
+  constructor(opts = {}) {
     this.group = new THREE.Group();
     this.phase = 0;
     this.speedSm = 0;
     this.leanSm = 0;
+    this.gait = { ...BASE_GAIT, ...(opts.gait || {}) };
+    this.riderRestY = 0.42;
     this._buildMaterials(HORSE_COATS[0], COWBOY_COLORS[0]);
-    this._build();
+    if (opts.virtual) this._buildVirtualHorse();
+    else this._buildHorse();
+    this._buildRider(this.body, 0, 0.42, 0.02);
+    this.group.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   }
 
   _buildMaterials(coat, cowboy) {
@@ -113,7 +124,31 @@ export class HorseRider {
     if (this.stripe) this.stripe.visible = coat.stripe;
   }
 
-  _build() {
+  // Joint skeleton only — same pivots, names and rest rotations as the
+  // procedural horse, so animate()/applyJump() run unchanged; a skinned
+  // model reads these joints and retargets them onto its bones.
+  _buildVirtualHorse() {
+    this.body = pivot(this.group, 0, 1.06, 0);
+    this.neck = pivot(this.body, 0, 0.22, 0.62);
+    this.neck.rotation.x = 0.5;
+    this.head = pivot(this.neck, 0, 0.58, 0.05);
+    this.head.rotation.x = -0.05;
+    this.earL = pivot(this.head, 0.08, 0.15, -0.03);
+    this.earR = pivot(this.head, -0.08, 0.15, -0.03);
+    this.tail = [];
+    let tp = pivot(this.body, 0, 0.18, -0.72);
+    tp.rotation.x = 0.7;
+    for (let i = 0; i < 3; i++) { const next = pivot(tp, 0, -0.26, 0); this.tail.push(tp); tp = next; }
+    const vleg = (x, y, z, front) => {
+      const hip = pivot(this.body, x, y, z);
+      const knee = pivot(hip, 0, -0.42, 0);
+      const fetlock = pivot(knee, 0, -0.38, 0);
+      return { hip, knee, fetlock, front };
+    };
+    this.legs = [vleg(0.2, -0.18, 0.48, true), vleg(-0.2, -0.18, 0.48, true), vleg(0.2, -0.16, -0.45, false), vleg(-0.2, -0.16, -0.45, false)];
+  }
+
+  _buildHorse() {
     const M = this.mats;
     // ------- horse body (root sits at ground level) -------
     this.body = pivot(this.group, 0, 1.06, 0);
@@ -222,9 +257,12 @@ export class HorseRider {
     saddle.geometry.translate(0, 0, 0);
     add(this.body, new THREE.BoxGeometry(0.34, 0.14, 0.08), M.saddle, 0, 0.42, -0.14); // cantle
     add(this.body, new THREE.CylinderGeometry(0.035, 0.05, 0.09, 8), M.saddle, 0, 0.47, 0.2); // horn
+  }
 
-    // ------- rider -------
-    this.rider = pivot(this.body, 0, 0.42, 0.02);
+  // ------- rider (shared by the procedural horse and skinned models) -------
+  _buildRider(parent, x, y, z) {
+    const M = this.mats;
+    this.rider = pivot(parent, x, y, z);
     this.torso = pivot(this.rider, 0, 0.08, 0);
     // hips + belt
     add(this.torso, loftUp([
@@ -317,17 +355,16 @@ export class HorseRider {
       toe.scale.set(0.9, 0.65, 1.5);
       add(knee, new THREE.BoxGeometry(0.05, 0.04, 0.04), M.boots, 0, -0.335, -0.03);
     }
-
-    this.group.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   }
 
   // ---- gait animation ------------------------------------------------------
   // speed m/s, turn rad/s. armPose: 'rest' | 'spin' | 'throw' | 'pull'
   animate(dt, speed, turn, armPose, time) {
+    const G = this.gait;
     this.speedSm += (speed - this.speedSm) * Math.min(1, dt * 6);
     const s = this.speedSm;
     const galloping = s > 4.5;
-    const strideFreq = galloping ? 1.4 + s * 0.09 : 0.9 + s * 0.35;
+    const strideFreq = (galloping ? 1.4 + s * 0.09 : 0.9 + s * 0.35) * G.freq;
     if (s > 0.15) this.phase += dt * strideFreq;
     const P = this.phase * Math.PI * 2;
     const run = Math.min(1, s / 6);          // 0 idle .. 1 full gallop
@@ -335,19 +372,19 @@ export class HorseRider {
 
     // body bob / pitch / roll into turns
     this.leanSm += (turn - this.leanSm) * Math.min(1, dt * 5);
-    const bob = galloping ? Math.sin(P * 1) * 0.05 * run : Math.sin(P * 2) * 0.015 * walkAmt;
-    this.body.position.y = 1.06 + bob + (galloping ? 0.03 * run : 0);
-    this.body.rotation.x = galloping ? Math.cos(P) * 0.06 * run : 0;
+    const bob = (galloping ? Math.sin(P * 1) * 0.05 * run : Math.sin(P * 2) * 0.015 * walkAmt) * G.bob;
+    this.body.position.y = 1.06 + bob + (galloping ? 0.03 * run * G.bob : 0);
+    this.body.rotation.x = galloping ? Math.cos(P) * 0.06 * run * G.pitch : 0;
     this.body.rotation.z = THREE.MathUtils.clamp(-this.leanSm * 0.12, -0.18, 0.18);
 
     // legs — walk: 4-beat offsets; gallop: rotary gallop pairing
     const offsets = galloping ? [0.05, 0.15, 0.55, 0.65] : [0, 0.5, 0.75, 0.25];
-    const amp = galloping ? 0.75 * run : 0.5 * walkAmt;
+    const amp = (galloping ? 0.75 * run : 0.5 * walkAmt) * G.legAmp;
     for (let i = 0; i < 4; i++) {
       const leg = this.legs[i];
       const lp = P + offsets[i] * Math.PI * 2;
       const swing = Math.cos(lp);
-      const lift = Math.max(0, Math.sin(lp));
+      const lift = Math.max(0, Math.sin(lp)) * G.kneeLift;
       leg.hip.rotation.x = swing * amp * (leg.front ? 1 : 0.9);
       leg.knee.rotation.x = leg.front
         ? -lift * (0.5 + amp)                       // front knees fold forward
@@ -361,7 +398,7 @@ export class HorseRider {
     }
 
     // neck & head — neck hangs forward and stretches out at speed
-    const neckBase = 0.5 + run * 0.35 + (galloping ? Math.cos(P) * 0.08 * run : 0);
+    const neckBase = 0.5 + G.neck + run * 0.35 + (galloping ? Math.cos(P) * 0.08 * run * G.headBob : 0);
     this.neck.rotation.x = neckBase + Math.sin(time * 0.7) * 0.02;
     this.head.rotation.x = -0.05 - run * 0.2;
     this.head.rotation.y = THREE.MathUtils.clamp(this.leanSm * 0.35, -0.4, 0.4);
@@ -371,7 +408,7 @@ export class HorseRider {
     // tail — streams back with speed, swishes at idle
     for (let i = 0; i < 3; i++) {
       const t = this.tail[i];
-      t.rotation.x = (i === 0 ? 0.7 : 0) + run * 0.5 - Math.sin(P + i) * 0.12 * run;
+      t.rotation.x = (i === 0 ? 0.7 + G.tail : 0) + run * 0.5 - Math.sin(P + i) * 0.12 * run;
       t.rotation.z = Math.sin(time * (1.1 + i * 0.3) + i) * (0.18 - run * 0.12);
     }
 
@@ -438,8 +475,11 @@ export class HorseRider {
     mix(this.tail[0], 'x', 0.9);
     // rider rises into two-point, leaning up the neck
     mix(this.torso, 'x', 0.55);
-    this.rider.position.y = 0.42 + Math.sin(f * Math.PI) * 0.035 * w;
+    this.rider.position.y = this.riderRestY + Math.sin(f * Math.PI) * 0.035 * w;
   }
+
+  // hook for skinned rigs: push the joint pose onto the skeleton
+  postPose() {}
 
   handWorldPos(out) {
     return this.handR.getWorldPosition(out);
@@ -493,13 +533,17 @@ export function applyJumpPose(rider) {
   else if (rider.landT > 0) {
     rider.rig.body.position.y -= Math.sin((rider.landT / 0.22) * Math.PI) * 0.06;
   }
+  rider.rig.postPose();
 }
 
 // ---------------------------------------------------------------------------
 // Player: movement physics wrapping the rig.
 
+export const DEFAULT_MOVE = { maxSpeed: 12.5, turnSpeed: 3.4, accel: 16, decel: 14, alignFloor: 0.25 };
+
 export class Player {
   constructor(scene, world) {
+    this.scene = scene;
     this.world = world;
     this.rig = new HorseRider();
     this.obj = this.rig.group;
@@ -509,7 +553,7 @@ export class Player {
     this.vel = new THREE.Vector3();
     this.heading = Math.PI;      // facing away from the camera (screen-up)
     this.speed = 0;
-    this.maxSpeed = 12.5;
+    this.move = { ...DEFAULT_MOVE };
     this.armPose = 'rest';
     this._turnRate = 0;
     this.jump = null;            // { t, T, h } while airborne
@@ -517,22 +561,39 @@ export class Player {
     this.landT = 0;
   }
 
+  get maxSpeed() { return this.move.maxSpeed; }
+
+  // swap in a different horse rig (e.g. a loaded breed model), keeping pose
+  setRig(rig) {
+    const old = this.rig;
+    this.scene.remove(old.group);
+    this.rig = rig;
+    this.obj = rig.group;
+    this.obj.position.copy(this.pos);
+    this.obj.rotation.y = this.heading;
+    this.scene.add(this.obj);
+  }
+
+  setMovement(params) {
+    this.move = { ...DEFAULT_MOVE, ...params };
+  }
+
   // moveDir: normalized world-space desired direction (or zero), 0..1 strength
   update(dt, moveDir, strength, time) {
-    const accel = 16, decel = 14, turnSpeed = 3.4;
-    const want = strength * this.maxSpeed;
+    const { accel, decel, turnSpeed, maxSpeed, alignFloor } = this.move;
+    const want = strength * maxSpeed;
 
     if (strength > 0.05) {
       const target = Math.atan2(moveDir.x, moveDir.z);
       let d = target - this.heading;
       while (d > Math.PI) d -= Math.PI * 2;
       while (d < -Math.PI) d += Math.PI * 2;
-      const maxTurn = turnSpeed * dt * (0.55 + 0.45 * (1 - Math.min(1, this.speed / this.maxSpeed)));
+      const maxTurn = turnSpeed * dt * (0.55 + 0.45 * (1 - Math.min(1, this.speed / maxSpeed)));
       const step = THREE.MathUtils.clamp(d, -maxTurn, maxTurn);
       this.heading += step;
       this._turnRate = step / Math.max(dt, 1e-4);
       // slow down for sharp turns
-      const align = Math.max(0.25, Math.cos(d));
+      const align = Math.max(alignFloor, Math.cos(d));
       this.speed = THREE.MathUtils.clamp(this.speed + accel * dt * align, 0, want * align + 1);
     } else {
       this.speed = Math.max(0, this.speed - decel * dt);

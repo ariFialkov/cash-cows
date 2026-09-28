@@ -29,6 +29,15 @@ the throw while aiming.
 
 ## The game
 
+- **The Stable (horse storefront).** From the menu, spend winnings on horses
+  across five types — **Draft, Gaited, Warmblood, Light, Pony** — each with
+  its own movement tendencies (speed / agility / handling) and a signature
+  gait. Twenty species span Common → Legendary rarity with rising beauty,
+  price and small stat bonuses (a black Friesian, a leopard-spotted Pony of
+  the Americas, a metallic-gold Akhal-Teke…). Selecting a card previews the
+  horse live on the menu; buy once, equip any time. Stats drive real handling:
+  a Light horse hits 15 m/s but scrubs speed in sharp turns, a Draft is slow
+  to get going but rock steady, a Pony turns on a dime.
 - **Lasso = bet size.** Pick your rope in the menu (5 / 10 / 25 / 100 coins) or
   tap the bet pill in-game to cycle. Missed throws cost nothing.
 - **Aim assist.** Throws magnetize to a cow near the landing point (the aim
@@ -81,10 +90,24 @@ Monte Carlo (2M draws per cow type ⇒ 0.952–0.962 across every type/strategy)
 
 ## Tech notes
 
-- **Three.js, no external assets.** Horse, rider, and cows are procedurally
-  built, many-jointed rigs (neck/head/jaw/ears/tails, 3-joint horse legs,
-  2-joint cow legs, articulated rider) with code-driven idle/walk/gallop,
-  graze, struggle, and stomp cycles. Cow hides are procedural canvas textures.
+- **Rigged horse breeds.** Five fully rigged quadruped models (27-bone
+  skeletons: 4-joint legs, 5-bone tails, ear bones) ship as meshopt-compressed
+  GLBs (~120KB each, converted from the FBX sources in `models-src/` by
+  `npm run models`). The procedural gait code is unchanged: `animate()` poses
+  a set of virtual joints and `SkinnedHorseRider.postPose()` retargets them
+  onto the skeleton as deltas over the bind pose (front knee fold split across
+  elbow + knee, hind fold across stifle + hock in opposite directions, tail
+  spread over five bones, spine flex on the chest bone). Per-type gait
+  profiles nudge stride frequency, bob, knee lift, neck carriage and tail
+  carriage so each type moves distinctively. Coats are painted into vertex
+  colours from bind-pose position + bone weights — points, socks, blazes,
+  dapples, pinto patches, leopard spots, roan, dorsal stripes, mane/tail and
+  saddle leather — so no texture is required (a hide texture can be layered
+  in later via the preserved UVs).
+- **Three.js, no external assets** for everything else. Rider and cows are
+  procedurally built, many-jointed rigs (neck/head/jaw/ears/tails, 2-joint
+  cow legs, articulated rider) with code-driven idle/walk/gallop, graze,
+  struggle, and stomp cycles. Cow hides are procedural canvas textures.
 - **Seeded world gen.** Each session rolls a new seed: rolling value-noise
   terrain, patchy colouring, trees/rocks/bushes, perimeter fence that follows
   the terrain, drifting clouds, and a grass carpet that re-lays itself around
@@ -102,16 +125,20 @@ Monte Carlo (2M draws per cow type ⇒ 0.952–0.962 across every type/strategy)
 
 ```
 src/
-  main.js              game orchestration: states, throw/hook logic, bet flows, camera
+  main.js              game orchestration: states, throw/hook logic, bet flows, camera, stable
   game/economy.js      RTP model, wallet, bet tiers
+  game/horses.js       horse types, species catalogue, stats & gait profiles
   world/world.js       seeded terrain, fence, decor, sky, grass, clouds
-  entities/horse.js    horse+rider rig, gaits, player movement
+  entities/horse.js    procedural rider + virtual horse joints, gaits, jumps, player movement
+  entities/horseModel.js  GLB breed loader, coat painter, skeleton retargeting
   entities/cow.js      cow rig, variants, flee/herd AI
   entities/herd.js     spawning & population upkeep
-  lasso/lasso.js       rope rendering & throw states
+  entities/bots.js     rival cowboys (simulated multiplayer)
+  lasso/lasso.js       verlet rope + dynamic loop
   input/input.js       joystick / swipe / WASD / mouse-drag
-  ui/ui.js             menu, HUD, toasts, rider popups
-  core/                rng & noise, particles, WebAudio sfx
-public/                manifest, service worker, icons
-tools/make-icons.mjs   dependency-free PNG icon generator
+  ui/ui.js             menu, stable storefront, HUD, toasts, rider popups
+  ui/minimap.js        radar minimap
+  core/                rng & noise, loft geometry, particles, WebAudio sfx
+public/models/         compressed breed GLBs (built from models-src/*.fbx)
+tools/                 model pipeline (FBX → GLB) and icon generator
 ```

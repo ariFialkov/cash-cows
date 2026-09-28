@@ -2,7 +2,8 @@
 // above the rider (wrangle progress / offer deal / crash cash-out).
 
 import { LASSO_TIERS, fmt } from '../game/economy.js';
-import { HORSE_COATS, COWBOY_COLORS } from '../entities/horse.js';
+import { COWBOY_COLORS } from '../entities/horse.js';
+import { HORSE_TYPES, HORSE_SPECIES, RARITY, speciesStats, getSpecies } from '../game/horses.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -13,16 +14,26 @@ export class UI {
     this.onCustomize = null;   // (kind, index)
     this.onBetCycle = null;
     this.onMenu = null;
+    this.onPreview = null;     // (speciesId) — stable card selected
+    this.onBuy = null;         // (speciesId)
+    this.onEquip = null;       // (speciesId)
+    this.onStableClose = null;
 
     this.menuEl = $('menu');
     this.hudEl = $('hud');
     this.popupEl = $('rider-popup');
     this.popupInner = $('rp-inner');
+    this.stableEl = $('stable');
+    this.stableTab = 'light';
+    this.previewId = null;
 
     this._buildSwatches();
+    this._buildStable();
     $('start-btn').addEventListener('click', () => this.onStart?.());
     $('bet-pill').addEventListener('click', () => this.onBetCycle?.());
     $('menu-btn').addEventListener('click', () => this.onMenu?.());
+    $('stable-btn').addEventListener('click', () => this.openStable());
+    $('stable-close').addEventListener('click', () => this.closeStable());
     $('reset-balance-btn').addEventListener('click', () => {
       this.wallet.topUpIfBroke();
       this.refreshBalance();
@@ -55,8 +66,90 @@ export class UI {
   _buildSwatches() {
     const c = this.wallet.custom;
     this._swatchRow($('cowboy-swatches'), COWBOY_COLORS, 'cowboy', (i) => i.shirt, c.cowboy, false);
-    this._swatchRow($('horse-swatches'), HORSE_COATS, 'horse', (i) => i.body, c.horse, false);
     this._swatchRow($('lasso-swatches'), LASSO_TIERS, 'lasso', (i) => i.color, c.lasso, true);
+    this.refreshHorseName();
+  }
+
+  refreshHorseName() {
+    $('horse-name').textContent = getSpecies(this.wallet.custom.horse).name;
+  }
+
+  // ---- stable storefront ----
+  _buildStable() {
+    const tabs = $('stable-tabs');
+    tabs.innerHTML = '';
+    for (const [key, t] of Object.entries(HORSE_TYPES)) {
+      const b = document.createElement('button');
+      b.className = 'stable-tab';
+      b.textContent = t.name;
+      b.dataset.type = key;
+      b.addEventListener('click', () => { this.stableTab = key; this.renderStable(); });
+      tabs.appendChild(b);
+    }
+  }
+
+  openStable() {
+    this.stableTab = getSpecies(this.wallet.custom.horse).type;
+    this.previewId = this.wallet.custom.horse;
+    this.menuEl.classList.add('hidden');
+    this.stableEl.classList.remove('hidden');
+    this.renderStable();
+  }
+
+  closeStable() {
+    this.stableEl.classList.add('hidden');
+    this.menuEl.classList.remove('hidden');
+    this.previewId = null;
+    this.refreshHorseName();
+    this.onStableClose?.();
+  }
+
+  get stableOpen() { return !this.stableEl.classList.contains('hidden'); }
+
+  _statBars(stats, cls = 'stat') {
+    const row = (label, v) => `<div class="${cls}">${label}<div class="bar"><div style="width:${Math.round(v * 100)}%"></div></div></div>`;
+    return row('Speed', stats.speed) + row('Agility', stats.agility) + row('Handling', stats.handling);
+  }
+
+  renderStable() {
+    const c = this.wallet.custom;
+    $('stable-balance-value').textContent = fmt(this.wallet.balance);
+    document.querySelectorAll('.stable-tab').forEach((b) => b.classList.toggle('sel', b.dataset.type === this.stableTab));
+
+    const type = HORSE_TYPES[this.stableTab];
+    $('stable-type').innerHTML = `<b>${type.name} horses</b> — ${type.blurb}<div class="type-stats">${this._statBars(type.stats)}</div>`;
+
+    const grid = $('stable-grid');
+    grid.innerHTML = '';
+    for (const sp of HORSE_SPECIES.filter((s) => s.type === this.stableTab)) {
+      const owned = c.owned.includes(sp.id);
+      const equipped = c.horse === sp.id;
+      const stats = speciesStats(sp);
+      const r = RARITY[sp.rarity];
+      const canAfford = this.wallet.balance >= sp.price;
+      const chip = `linear-gradient(135deg, #${sp.coat.base.toString(16).padStart(6, '0')} 60%, #${sp.coat.mane.toString(16).padStart(6, '0')} 60%)`;
+      const card = document.createElement('div');
+      card.className = 'horse-card' + (equipped ? ' equipped' : '') + (this.previewId === sp.id ? ' previewing' : '');
+      card.innerHTML = `
+        <div class="card-top">
+          <div class="coat-chip" style="background:${chip}"></div>
+          <div class="card-name"><b>${sp.name}</b><span class="rarity" style="color:${r.color}">${r.label}</span></div>
+          <div class="card-price ${owned ? 'owned' : ''}">${owned ? (equipped ? 'EQUIPPED' : 'OWNED') : `<span class="coin-ico"></span>${fmt(sp.price)}`}</div>
+        </div>
+        <div class="card-blurb">${sp.blurb}</div>
+        <div class="card-stats">${this._statBars(stats)}</div>
+        <div class="card-actions">
+          ${owned
+            ? (equipped ? '<button class="btn-equipped" disabled>Riding this horse</button>' : '<button class="btn-equip">EQUIP</button>')
+            : `<button class="btn-buy" ${canAfford ? '' : 'disabled'}>${canAfford ? 'BUY' : 'NOT ENOUGH COINS'}</button>`}
+        </div>`;
+      card.addEventListener('click', () => {
+        if (this.previewId !== sp.id) { this.previewId = sp.id; this.onPreview?.(sp.id); this.renderStable(); }
+      });
+      card.querySelector('.btn-buy')?.addEventListener('click', (e) => { e.stopPropagation(); this.onBuy?.(sp.id); });
+      card.querySelector('.btn-equip')?.addEventListener('click', (e) => { e.stopPropagation(); this.onEquip?.(sp.id); });
+      grid.appendChild(card);
+    }
   }
 
   showMenu() {

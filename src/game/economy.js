@@ -103,7 +103,12 @@ export class Wallet {
     let saved = null;
     try { saved = JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch (_) { /* ignore */ }
     this.balance = saved && Number.isFinite(saved.balance) ? saved.balance : START_BALANCE;
-    this.custom = (saved && saved.custom) || { cowboy: 0, horse: 0, lasso: 1 };
+    this.custom = { cowboy: 0, lasso: 1, horse: 'quarter', owned: ['quarter'], ...((saved && saved.custom) || {}) };
+    // migrate pre-stable saves (horse was a coat index)
+    if (typeof this.custom.horse !== 'string') this.custom.horse = 'quarter';
+    if (!Array.isArray(this.custom.owned)) this.custom.owned = ['quarter'];
+    if (!this.custom.owned.includes('quarter')) this.custom.owned.push('quarter');
+    if (!this.custom.owned.includes(this.custom.horse)) this.custom.horse = 'quarter';
   }
   save() {
     try {

@@ -50,8 +50,8 @@
           <div class="swatch-row" id="cowboy-swatches"></div>
         </div>
         <div class="custom-row">
-          <span class="custom-label">Horse</span>
-          <div class="swatch-row" id="horse-swatches"></div>
+          <span class="custom-label">Horse <small id="horse-name">Quarter Horse</small></span>
+          <button id="stable-btn" class="stable-btn">&#127968; STABLE</button>
         </div>
         <div class="custom-row">
           <span class="custom-label">Lasso <small>(bet / throw)</small></span>
@@ -67,6 +67,19 @@
         <b>Move:</b> <span class="only-touch">left joystick</span><span class="only-mouse">WASD</span>
         &nbsp;&nbsp;<b>Lasso:</b> <span class="only-touch">swipe</span><span class="only-mouse">click-drag &amp; release</span> toward a cow
       </p>
+    </div>
+  </div>
+  <!-- ===== Stable (horse storefront) ===== -->
+  <div id="stable" class="hidden">
+    <div class="stable-panel">
+      <div class="stable-head">
+        <h2>The Stable</h2>
+        <div class="stable-balance"><span class="coin-ico"></span><span id="stable-balance-value">0</span></div>
+        <button id="stable-close" class="pill" aria-label="Close">&#10005;</button>
+      </div>
+      <div class="stable-tabs" id="stable-tabs"></div>
+      <div class="stable-type" id="stable-type"></div>
+      <div class="stable-grid" id="stable-grid"></div>
     </div>
   </div>
   <script type="module" src="./src/main.js"></script>

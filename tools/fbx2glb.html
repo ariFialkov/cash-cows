@@ -1,0 +1,29 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<script type="importmap">
+{ "imports": { "three": "/node_modules/three/build/three.module.js",
+               "three/addons/": "/node_modules/three/examples/jsm/" } }
+</script>
+</head><body>
+<script type="module">
+// FBX -> GLB (binary glTF) with skin + skeleton, in the browser.
+import * as THREE from 'three';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+
+const name = new URLSearchParams(location.search).get('m');
+new FBXLoader().load(`/models-src/${name}.fbx`, (root) => {
+  // strip the dead texture reference; materials get rebuilt in-game anyway
+  root.traverse((o) => {
+    if (o.isMesh) {
+      o.material = new THREE.MeshStandardMaterial({ name: 'horse', color: 0xffffff });
+      o.geometry.deleteAttribute('color');
+    }
+  });
+  root.animations = [];
+  new GLTFExporter().parse(root, (buf) => {
+    window.__glb = new Uint8Array(buf);
+    document.title = 'done';
+  }, (err) => { window.__err = String(err); document.title = 'done'; }, { binary: true, animations: [] });
+}, undefined, (err) => { window.__err = String(err); document.title = 'done'; });
+</script></body></html>

@@ -4,23 +4,48 @@
 // the range feel alive and lucky.
 
 import * as THREE from 'three';
-import { HorseRider, updateJump, applyJumpPose } from './horse.js';
+import { HorseRider, updateJump, applyJumpPose, DEFAULT_MOVE } from './horse.js';
 import { Lasso } from '../lasso/lasso.js';
 import { PEN_HALF } from '../world/world.js';
 import { LASSO_TIERS, drawOutcome, round2 } from '../game/economy.js';
+import { HORSE_SPECIES, speciesStats, movementParams } from '../game/horses.js';
+import { loadHorseType, SkinnedHorseRider } from './horseModel.js';
 
 const NAMES = ['Dusty', 'Big Tex', 'Maribel', 'Cactus Joe', 'Sundown'];
 const BOT_COUNT = 5;
 const VIS_DIST = 130;        // beyond this, AI-only (no animation / lasso mesh)
+const RARITY_WEIGHT = { common: 50, uncommon: 30, rare: 14, epic: 5, legendary: 1 };
+
+function pickSpecies() {
+  const total = HORSE_SPECIES.reduce((s, sp) => s + RARITY_WEIGHT[sp.rarity], 0);
+  let r = Math.random() * total;
+  for (const sp of HORSE_SPECIES) { r -= RARITY_WEIGHT[sp.rarity]; if (r <= 0) return sp; }
+  return HORSE_SPECIES[0];
+}
 
 class Bot {
   constructor(scene, world, i) {
     this.name = NAMES[i % NAMES.length];
+    this.scene = scene;
     this.world = world;
     this.rig = new HorseRider();
     this.rig.setColors((i + 1) % 4, (i + 2) % 4);
     this.obj = this.rig.group;
     scene.add(this.obj);
+
+    // every rival rides a real breed, with that breed's movement stats
+    this.species = pickSpecies();
+    this.move = movementParams(speciesStats(this.species));
+    loadHorseType(this.species.type).then((template) => {
+      const rig = new SkinnedHorseRider(template, this.species, (i + 2) % 4);
+      rig.phase = this.rig.phase;
+      this.scene.remove(this.obj);
+      this.rig = rig;
+      this.obj = rig.group;
+      this.obj.position.copy(this.pos);
+      this.obj.rotation.y = this.heading;
+      this.scene.add(this.obj);
+    }).catch(() => { this.move = { ...DEFAULT_MOVE }; });
 
     const a = (i / BOT_COUNT) * Math.PI * 2;
     const r = 60 + Math.random() * 120;
@@ -78,7 +103,8 @@ class Bot {
       let d = want - this.heading;
       while (d > Math.PI) d -= Math.PI * 2;
       while (d < -Math.PI) d += Math.PI * 2;
-      const step = THREE.MathUtils.clamp(d, -2.8 * dt, 2.8 * dt);
+      const turn = this.move.turnSpeed * 0.82;
+      const step = THREE.MathUtils.clamp(d, -turn * dt, turn * dt);
       this.heading += step;
       this._turnRate = step / Math.max(dt, 1e-4);
       const align = Math.max(0.3, Math.cos(d));
@@ -120,7 +146,7 @@ class Bot {
     this.stateT -= dt;
 
     if (this.state === 'roam') {
-      const dist = this._moveToward(dt, this.wp[0], this.wp[1], 7.5);
+      const dist = this._moveToward(dt, this.wp[0], this.wp[1], this.move.maxSpeed * 0.58);
       this.armPose = 'spin';
       if (dist < 6 || this.stateT <= 0) {
         // look for a target: free standard cows, away from the player
@@ -150,7 +176,7 @@ class Bot {
         this.stateT = 2 + Math.random() * 4;
         this._pickWaypoint();
       } else {
-        const dist = this._moveToward(dt, c.pos.x, c.pos.z, 11.5);
+        const dist = this._moveToward(dt, c.pos.x, c.pos.z, this.move.maxSpeed * 0.9);
         this.armPose = 'spin';
         if (dist < 11) {
           if (vis) {

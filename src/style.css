@@ -356,5 +356,145 @@ body.touch-mode #joystick-base { display: block; }
 }
 .howto { margin-top: 12px; font-size: 12.5px; opacity: .75; line-height: 1.5; }
 
+.stable-btn {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: .06em;
+  color: var(--ink);
+  background: linear-gradient(#ffd968, var(--gold) 55%, var(--gold-deep));
+  border: 0;
+  border-radius: 10px;
+  padding: 8px 14px;
+  cursor: pointer;
+  box-shadow: 0 3px 0 #8a5d0a;
+}
+.stable-btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #8a5d0a; }
+
+/* ============ stable storefront ============ */
+#stable {
+  position: fixed;
+  inset: 0;
+  z-index: 11;
+  display: flex;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+.stable-panel {
+  pointer-events: auto;
+  width: min(440px, 100vw);
+  height: 100%;
+  background: linear-gradient(#4f331a, #3b2612);
+  border-left: 3px solid var(--wood-lite);
+  box-shadow: -10px 0 30px rgba(0,0,0,.5);
+  display: flex;
+  flex-direction: column;
+  color: var(--cream);
+  padding-top: env(safe-area-inset-top);
+}
+@media (max-width: 640px) {
+  #stable { align-items: flex-end; }
+  .stable-panel {
+    width: 100vw;
+    height: 62vh;
+    border-left: 0;
+    border-top: 3px solid var(--wood-lite);
+    border-radius: 18px 18px 0 0;
+  }
+}
+.stable-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 14px 8px;
+}
+.stable-head h2 { font-size: 22px; font-weight: 900; color: var(--gold); letter-spacing: .04em; flex: 1; }
+.stable-balance { display: flex; align-items: center; gap: 6px; font-weight: 800; color: var(--gold); }
+#stable-close { position: static; padding: 6px 11px; font-size: 14px; }
+
+.stable-tabs { display: flex; gap: 6px; padding: 0 14px 10px; overflow-x: auto; }
+.stable-tab {
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 800;
+  padding: 7px 11px;
+  border-radius: 999px;
+  border: 2px solid var(--wood-lite);
+  background: rgba(0,0,0,.2);
+  color: var(--cream);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.stable-tab.sel { background: var(--gold); color: var(--ink); border-color: var(--gold); }
+
+.stable-type {
+  margin: 0 14px 10px;
+  padding: 10px 12px;
+  background: rgba(0,0,0,.22);
+  border-radius: 12px;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.stable-type .type-stats { display: flex; gap: 10px; margin-top: 8px; }
+.stat {
+  flex: 1;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  opacity: .9;
+}
+.stat .bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,.14); margin-top: 3px; overflow: hidden; }
+.stat .bar > div { height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--gold-deep), #ffe08a); }
+
+.stable-grid {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 14px calc(14px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.horse-card {
+  background: rgba(0,0,0,.25);
+  border: 2px solid rgba(247,234,208,.15);
+  border-radius: 14px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: border-color .15s;
+}
+.horse-card:hover, .horse-card.previewing { border-color: var(--gold); }
+.horse-card.equipped { border-color: var(--green); }
+.card-top { display: flex; align-items: center; gap: 10px; }
+.coat-chip {
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  flex: none;
+  border: 2px solid rgba(255,255,255,.25);
+}
+.card-name { flex: 1; min-width: 0; }
+.card-name b { font-size: 15px; display: block; }
+.rarity { font-size: 10.5px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
+.card-price { font-weight: 900; color: var(--gold); display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+.card-price.owned { color: #bdf0b5; }
+.card-blurb { font-size: 12px; opacity: .8; margin: 6px 0 8px; line-height: 1.4; }
+.card-stats { display: flex; gap: 8px; }
+.card-actions { display: flex; gap: 8px; margin-top: 9px; }
+.card-actions button {
+  flex: 1;
+  font: inherit;
+  font-weight: 900;
+  font-size: 13px;
+  border: 0;
+  border-radius: 9px;
+  padding: 8px;
+  cursor: pointer;
+  color: var(--ink);
+}
+.btn-buy { background: linear-gradient(#ffd968, var(--gold)); }
+.btn-buy[disabled] { opacity: .45; cursor: not-allowed; }
+.btn-equip { background: linear-gradient(#7ed072, var(--green)); }
+.btn-equipped { background: rgba(255,255,255,.12); color: var(--cream); cursor: default; }
+
 body.touch-mode .only-mouse { display: none; }
 body:not(.touch-mode) .only-touch { display: none; }

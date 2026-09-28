@@ -13,6 +13,8 @@ import { sfx } from './core/sfx.js';
 import { Input } from './input/input.js';
 import { UI, tmpl } from './ui/ui.js';
 import { Minimap } from './ui/minimap.js';
+import { getSpecies, speciesStats, movementParams } from './game/horses.js';
+import { loadHorseType, SkinnedHorseRider } from './entities/horseModel.js';
 import {
   Wallet, LASSO_TIERS, fmt, round2, winProbForMultiplier,
   drawOutcome, drawOffer, drawCrashPoint, crashMultAt,
@@ -97,12 +99,65 @@ const CAM_OFFSET = new THREE.Vector3(0, 11.2, 11.6); // 44° above horizon
 const camLook = new THREE.Vector3();
 
 function applyCustomization() {
-  player.rig.setColors(wallet.custom.horse, wallet.custom.cowboy);
+  player.rig.setColors(0, wallet.custom.cowboy);
   lasso.setColor(LASSO_TIERS[wallet.custom.lasso].color);
   ui.refreshBet();
 }
 applyCustomization();
 ui.showMenu();
+
+// ---- horse breeds: load the equipped species' model and mount the rider ----
+let shownSpecies = null;
+let equipToken = 0;
+async function showSpecies(id) {
+  const species = getSpecies(id);
+  const token = ++equipToken;
+  player.setMovement(movementParams(speciesStats(species)));
+  try {
+    const template = await loadHorseType(species.type);
+    if (token !== equipToken) return; // superseded by a newer request
+    const rig = new SkinnedHorseRider(template, species, wallet.custom.cowboy);
+    rig.phase = player.rig.phase;
+    rig.speedSm = player.rig.speedSm;
+    player.setRig(rig);
+    shownSpecies = species.id;
+  } catch (err) {
+    console.warn('horse model failed to load, keeping the built-in horse', err);
+  }
+}
+showSpecies(wallet.custom.horse);
+
+// ---- stable storefront wiring ----
+ui.onPreview = (id) => { sfx.click(); showSpecies(id); };
+ui.onBuy = (id) => {
+  const sp = getSpecies(id);
+  if (wallet.custom.owned.includes(id)) return;
+  if (!wallet.canBet(sp.price)) { ui.toast('Not enough coins for that horse', 'lose'); return; }
+  wallet.take(sp.price);
+  wallet.custom.owned.push(id);
+  wallet.custom.horse = id;
+  wallet.save();
+  sfx.win(true);
+  sfx.coin();
+  ui.refreshBalance();
+  ui.previewId = id;
+  ui.renderStable();
+  ui.refreshHorseName();
+  showSpecies(id);
+};
+ui.onEquip = (id) => {
+  if (!wallet.custom.owned.includes(id)) return;
+  sfx.click();
+  wallet.custom.horse = id;
+  wallet.save();
+  ui.previewId = id;
+  ui.renderStable();
+  ui.refreshHorseName();
+  showSpecies(id);
+};
+ui.onStableClose = () => {
+  if (shownSpecies !== wallet.custom.horse) showSpecies(wallet.custom.horse);
+};
 
 // ---------------------------------------------------------------------------
 // UI wiring
@@ -488,7 +543,7 @@ window.addEventListener('resize', () => {
 });
 
 // debug/testing handle
-window.__cc = { player, herd, wallet, hook, lasso, input, bots, world, getState: () => state, getWrangle: () => wrangle };
+window.__cc = { player, herd, wallet, hook, lasso, input, bots, world, showSpecies, getState: () => state, getWrangle: () => wrangle };
 
 // PWA
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
