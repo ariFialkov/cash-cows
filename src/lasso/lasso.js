@@ -27,6 +27,7 @@ function layUVs(geo, length, closed) {
   for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * reps);
 }
 const smoothstep = (t) => t * t * (3 - 2 * t);
+const wrapPi = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 function curveLength(pts, closed) {
   let L = 0;
   for (let i = 0; i < pts.length - 1; i++) L += pts[i].distanceTo(pts[i + 1]);
@@ -109,6 +110,10 @@ export class Lasso {
     for (let i = 0; i < LOOP_PTS; i++) this._loopPts.push(new THREE.Vector3());
 
     this._ring = { center: new THREE.Vector3(), normal: new THREE.Vector3(0, 1, 0), radius: 0.3 };
+    // overhead spin: the axis the hand circles (low-passed hand offset from
+    // the rider) and the hand's phase on that circle relative to spinAngle
+    this._axisOff = null;
+    this._spinLead = -0.4;
     this._cols = [];
     this.cinchT = 0;
     this.cinchFrom = 0.6;
@@ -349,25 +354,42 @@ export class Lasso {
     const sa = this.spinAngle;
     const R = aiming ? 1.0 : 0.78;
     this.loopRadius = R;
+    // The loop turns about its own axis. The hand goes round a small circle
+    // about that axis and the honda goes round the ring in phase with it, so
+    // the spoke sweeps like a clock hand and the whole ring (knot, twist,
+    // oval) revolves instead of hovering with the knot parked by the hand.
+    // The axis is the hand's circle centre, tracked as a low-passed offset
+    // from the rider so it rides along without lagging the horse; the hand's
+    // phase against spinAngle is measured and smoothed rather than assumed.
+    const off = this._v3.copy(hand).sub(player.pos);
+    if (!this._axisOff) this._axisOff = off.clone();
+    else this._axisOff.lerp(off, 1 - Math.exp(-dt / 0.22));
+    const hx = hand.x - player.pos.x - this._axisOff.x, hz = hand.z - player.pos.z - this._axisOff.z;
+    if (hx * hx + hz * hz > 0.002) {
+      const e = wrapPi(Math.atan2(hz, hx) - sa - this._spinLead);
+      this._spinLead = wrapPi(this._spinLead + e * (1 - Math.exp(-dt / 0.6)));
+    }
+    const ph = sa + this._spinLead;
+    const cx = Math.cos(ph), cz = Math.sin(ph);
     const center = this._v2.set(
-      player.pos.x + Math.cos(sa) * 0.22,
-      hand.y + 0.72 + Math.sin(sa * 2) * 0.04,
-      player.pos.z + Math.sin(sa) * 0.22
+      hand.x - cx * 0.1,
+      hand.y + 0.66 + Math.sin(sa * 2) * 0.04,
+      hand.z - cz * 0.1
     );
-    // plane tips slightly, wobbling with the spin
-    this._basis(this._v3.set(Math.cos(sa) * 0.16, 1, Math.sin(sa) * 0.16));
+    // plane tips slightly, the dip travelling round with the spoke
+    this._basis(this._v3.set(cx * 0.14, 1, cz * 0.14));
     const spinRate = aiming ? 1.35 : 1;
-    const phiHand = this._planeAngleTo(hand, center);
+    const phiHonda = this._planeAngleTo(this._v3.set(center.x + cx, center.y, center.z + cz), center);
     this._buildLoop(center, (th) => {
-      // centrifugal lag: a rotating oval + organic flutter; the far side
-      // of the loop sags under gravity away from the spoke
-      let d = th - phiHand; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2;
+      // centrifugal lag: the ring is a slight oval that turns with the rope,
+      // plus organic flutter; the far side sags under gravity away from the spoke
+      let d = th - phiHonda; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2;
       const far = 0.5 - 0.5 * Math.cos(d);
       return {
-        r: R * (1 + 0.08 * Math.sin(2 * th - sa * 2) + 0.045 * this._ripple(th, time, 23, 1.3 * spinRate)),
-        lift: R * (0.06 * Math.sin(2 * th - sa * 2 + 1.2) + 0.04 * this._ripple(th, time, 29, 1.1) - 0.06 * far),
+        r: R * (1 + 0.07 * Math.sin(2 * th - phiHonda * 2 + 0.7) + 0.045 * this._ripple(th, time, 23, 1.3 * spinRate)),
+        lift: R * (0.06 * Math.sin(2 * th - phiHonda * 2 + 1.9) + 0.04 * this._ripple(th, time, 29, 1.1) - 0.06 * far),
       };
-    }, phiHand, time);
+    }, phiHonda, time);
     this._ropeSim(dt, hand, this._hondaPt, { slack: 1.03, gravity: -8 });
 
     if (aiming) {
