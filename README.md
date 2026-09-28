@@ -64,10 +64,13 @@ the throw while aiming.
   alone, and cows flee from whichever rider is closest.
 - **Rope a rival** (just for laughs, no bet, no payout): land the loop on a
   bot cowboy and he comes off his horse and gets dragged along behind you for
-  a couple of seconds. Let go and he sits up and throws a tantrum, steam
-  coming out of his ears, then dusts himself off, walks back to his horse,
-  climbs on and carries on as if nothing happened. Aim assist will pick a
-  rival when no cow is closer.
+  a couple of seconds, flailing like a ragdoll (the faster you drag, the more
+  he flails, with tension jerks and kicks). Let go and he sits up and throws
+  a tantrum, steam coming out of his ears, then gets up, dusts himself off
+  and jogs back to his horse, which walks over to meet him halfway; he hops
+  on and carries on as if nothing happened. Every phase blends into the next
+  and a floor clamp keeps him above the turf throughout. Aim assist will
+  pick a rival when no cow is closer.
 - **Special cows** (all the same average RTP as everything else):
   - 🟣 **Mystery cow** — glowing purple, every one is the same size; the
     multiplier (1.3×–20×) is hidden until the wrangle resolves.

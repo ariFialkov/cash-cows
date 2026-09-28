@@ -405,79 +405,107 @@ export class SkinnedCowboy {
   }
 
   // Off the horse. The bot sets the group's world transform; this poses the
-  // body for: 'roped' (dragged on his back by the wrists), 'tantrum' (sitting
-  // up, pounding the ground, kicking), 'dustoff' (standing, brushing himself
-  // down), 'walk' (back to the horse) and 'mount' (the riding seat).
+  // body for: 'roped' (dragged on his back by the wrists: a loose, flailing
+  // ragdoll scaled by how fast he is being pulled), 'tantrum' (sits up,
+  // pounds the ground, drums his heels), 'dustoff' (gets up, brushes himself
+  // down), 'jog' (back to the horse) and 'mount' (the riding seat). Pose
+  // rates ease right after a mode change so states flow into each other.
   groundPose(mode, T, dt, opts = {}) {
     dt = THREE.MathUtils.clamp(dt || 1 / 60, 1e-3, 0.05);
-    const set = (name, q, rate = 14) => this._set(name, q, rate, dt);
+    if (mode !== this._gMode) { this._gMode = mode; this._gModeT = 0; } else this._gModeT += dt;
+    const ease = smooth01(this._gModeT / 0.7);           // 0 right after a switch .. 1 settled
+    const baseRate = 5 + 9 * ease;
+    const set = (name, q, rate = baseRate) => this._set(name, q, rate, dt);
     this.model.position.copy(this.seatOffset);
-    const s1 = Math.sin(T * 9), s2 = Math.sin(T * 9 + Math.PI);
+    const D = this.dyn;
+    // slow organic wobble, per joint
+    const n = (k, f = 1) => Math.sin(T * (0.9 + (k % 5) * 0.37) * f + D.seed * k) * 0.55 + Math.sin(T * (1.7 + (k % 3) * 0.61) * f + D.seed * 0.5 * k) * 0.45;
+
     if (mode === 'roped') {
-      // flat on his back, arms straight up to the wrists the rope holds
-      set('Hips', seq(X, 0.1 + Math.sin(T * 7) * 0.06, Y, Math.sin(T * 5) * 0.08));
-      set('Spine', seq(X, -0.12, Y, Math.sin(T * 6) * 0.1)); set('Spine1', seq(X, -0.1)); set('Spine2', seq(X, -0.08));
-      set('Neck', seq(X, -0.25)); set('Head', seq(X, -0.35, Y, Math.sin(T * 8) * 0.45));
-      set('RightShoulder', seq(Z, 0.2)); set('LeftShoulder', seq(Z, -0.2));
-      set('RightArm', seq(Z, -1.5, X, -0.1 + Math.sin(T * 6) * 0.08)); set('LeftArm', seq(Z, 1.5, X, -0.1 - Math.sin(T * 6) * 0.08));
-      set('RightForeArm', seq(X, -0.15)); set('LeftForeArm', seq(X, -0.15));
-      set('RightHand', seq(X, -0.3)); set('LeftHand', seq(X, -0.3));
-      for (const [side, s, ph] of [['Left', 1, 0], ['Right', -1, Math.PI]]) {
-        const kick = Math.max(0, Math.sin(T * 8 + ph));
-        set(side + 'UpLeg', seq(X, -0.35 - kick * 0.6, Z, s * 0.15));
-        set(side + 'Leg', seq(X, 0.5 + kick * 0.9));
-        set(side + 'Foot', seq(X, 0.3));
+      // flat on his back, pulled by the wrists. sp: drag speed 0..1, jerk: a
+      // tension tug 0..1 (arms snap straight, body jolts), kick: a leg kick 0..1
+      const sp = opts.speed ?? 0.5, jerk = opts.jerk ?? 0, kick = opts.kick ?? 0, kickSide = opts.kickSide ?? 1;
+      const flail = 0.35 + sp * 0.65;
+      set('Hips', seq(X, 0.05 + n(1) * 0.08 * flail, Y, n(2) * 0.12 * flail, Z, n(3) * 0.08 * flail));
+      set('Spine', seq(X, -0.1 - jerk * 0.15 + n(4) * 0.06 * flail, Y, n(5) * 0.18 * flail, Z, n(6) * 0.06 * flail));
+      set('Spine1', seq(X, -0.08 - jerk * 0.1, Y, n(7) * 0.12 * flail));
+      set('Spine2', seq(X, -0.06, Y, n(8) * 0.08 * flail));
+      set('Neck', seq(X, -0.3 + n(9) * 0.1, Y, n(10) * 0.25 * flail));
+      set('Head', seq(X, -0.4 + jerk * 0.15 + n(11) * 0.15 * flail, Y, n(12, 1.4) * 0.5 * flail, Z, n(13) * 0.25 * flail));
+      // arms: straight to the rope, shoulders yanked up on a jerk, elbows giving a little between
+      for (const [side, s, k] of [['Right', -1, 14], ['Left', 1, 20]]) {
+        set(side + 'Shoulder', seq(Z, -s * (0.15 + jerk * 0.2)));
+        set(side + 'Arm', seq(Z, -s * 1.5, X, -0.12 + n(k) * 0.12 * flail - jerk * 0.1, Y, n(k + 1) * 0.15 * flail));
+        set(side + 'ForeArm', seq(X, -0.35 * (1 - jerk) + n(k + 2) * 0.15 * flail * (1 - jerk), Y, s * 0.1));
+        set(side + 'Hand', seq(X, -0.35, Z, n(k + 3) * 0.2 * flail));
+      }
+      // legs trail loose, splay, and kick now and then; knees never fold
+      // further than the thigh lifts, so the feet stay off the ground
+      for (const [side, s, k] of [['Left', 1, 26], ['Right', -1, 32]]) {
+        const kk = kickSide === s ? kick : kick * 0.3;
+        const lift = 0.25 + Math.max(0, n(k)) * 0.35 * flail + kk * 0.8;
+        set(side + 'UpLeg', seq(X, -lift, Z, s * (0.12 + n(k + 1) * 0.18 * flail), Y, n(k + 2) * 0.15 * flail));
+        set(side + 'Leg', seq(X, Math.min(lift * 0.95, 0.35 + kk * 0.7 + Math.max(0, n(k + 3)) * 0.3 * flail)));
+        set(side + 'Foot', seq(X, 0.35 + n(k + 4) * 0.25 * flail));
       }
     } else if (mode === 'tantrum') {
-      // sitting up, legs out, fists pounding the ground, heels drumming, head shaking
-      set('Hips', seq(X, 0.15 + Math.sin(T * 9) * 0.05));
-      set('Spine', seq(X, 0.2 + Math.sin(T * 9) * 0.06, Y, Math.sin(T * 4.5) * 0.12));
-      set('Spine1', seq(X, 0.15, Y, Math.sin(T * 4.5) * 0.1)); set('Spine2', seq(X, 0.05));
-      set('Neck', seq(X, -0.2)); set('Head', seq(X, -0.2 + Math.sin(T * 9) * 0.08, Y, Math.sin(T * 6) * 0.55, Z, Math.sin(T * 3) * 0.12));
+      // sit up first (0.6 s), then pound the ground, drum the heels, shake the head
+      const rise = smooth01(T / 0.6);
+      const fury = smooth01((T - 0.4) / 0.4) * (opts.fury ?? 1);
+      set('Hips', seq(X, 0.05 + rise * 0.12 + Math.sin(T * 9) * 0.05 * fury));
+      set('Spine', seq(X, -0.1 + rise * 0.35 + Math.sin(T * 9) * 0.06 * fury, Y, Math.sin(T * 4.5) * 0.14 * fury));
+      set('Spine1', seq(X, -0.05 + rise * 0.2, Y, Math.sin(T * 4.5) * 0.1 * fury)); set('Spine2', seq(X, rise * 0.05));
+      set('Neck', seq(X, -0.3 + rise * 0.1)); set('Head', seq(X, -0.3 + rise * 0.1 + Math.sin(T * 9) * 0.08 * fury, Y, Math.sin(T * 6) * 0.6 * fury, Z, Math.sin(T * 3) * 0.14 * fury));
       for (const [side, s, ph] of [['Left', 1, 0], ['Right', -1, Math.PI]]) {
-        const pound = Math.max(0, Math.sin(T * 9 + ph));
+        const pound = Math.max(0, Math.sin(T * 9 + ph)) * fury;
+        // arms come down from overhead as he sits up, then pound
         set(side + 'Shoulder', seq(X, -0.15 * pound));
-        set(side + 'Arm', seq(Z, s * -1.05, X, -1.15 + pound * 0.85));
-        set(side + 'ForeArm', seq(X, -0.75 - pound * 0.25));
+        set(side + 'Arm', seq(Z, s * -1.5 + rise * s * 0.45, X, -0.12 - rise * 1.05 + pound * 0.85));
+        set(side + 'ForeArm', seq(X, -0.35 - rise * 0.4 - pound * 0.25));
         set(side + 'Hand', seq(X, -0.5));
-        const drum = Math.max(0, Math.sin(T * 10 + ph));
-        set(side + 'UpLeg', seq(X, -1.5 - drum * 0.15, Z, s * 0.18));
-        set(side + 'Leg', seq(X, 0.15 + drum * 0.35));
-        set(side + 'Foot', seq(X, 0.35));
+        // heels drum: the knee lifts and the shin follows so the foot stays on the ground
+        const drum = Math.max(0, Math.sin(T * 10 + ph)) * fury;
+        set(side + 'UpLeg', seq(X, -0.25 - rise * 1.25 - drum * 0.25, Z, s * 0.18));
+        set(side + 'Leg', seq(X, 0.1 + drum * 0.3));
+        set(side + 'Foot', seq(X, 0.35 - drum * 0.2));
       }
     } else if (mode === 'dustoff') {
-      // stood up, bent a little, brushing hat and trousers down; straightens at the end
-      const up = smooth01((T - 1.6) / 0.6);
-      set('Hips', seq(X, 0));
-      set('Spine', seq(X, 0.25 * (1 - up))); set('Spine1', seq(X, 0.2 * (1 - up))); set('Spine2', seq(X, 0.1 * (1 - up)));
-      set('Neck', seq(X, 0.1 * (1 - up))); set('Head', seq(X, 0.3 * (1 - up), Y, Math.sin(T * 2.2) * 0.25 * (1 - up)));
+      // gets up from sitting (0.7 s crouch to stand), brushes hat and trousers, straightens
+      const stand = smooth01(T / 0.7);
+      const up = smooth01((T - 1.7) / 0.6);
+      const crouch = 1 - stand;
+      set('Hips', seq(X, 0.1 * crouch));
+      set('Spine', seq(X, 0.55 * crouch + 0.25 * stand * (1 - up))); set('Spine1', seq(X, 0.3 * crouch + 0.2 * stand * (1 - up))); set('Spine2', seq(X, 0.1 * stand * (1 - up)));
+      set('Neck', seq(X, -0.2 * crouch + 0.1 * stand * (1 - up))); set('Head', seq(X, -0.3 * crouch + 0.3 * stand * (1 - up), Y, Math.sin(T * 2.2) * 0.25 * stand * (1 - up)));
       const brushR = Math.sin(T * 7), brushL = Math.sin(T * 5.5 + 1);
       set('RightShoulder', seq(X, 0)); set('LeftShoulder', seq(X, 0));
-      set('RightArm', seq(Z, 1.25 - up * 0.2, X, (-0.45 + brushR * 0.35) * (1 - up) + up * 0.1, Y, 0.1));
-      set('RightForeArm', seq(X, (-0.85 + brushR * 0.25) * (1 - up) - up * 1.3, Y, up * -0.6));
-      set('LeftArm', seq(Z, -1.15 + up * 0.15, X, (-0.9 + brushL * 0.45) * (1 - up) + up * 0.1, Y, -0.1));
-      set('LeftForeArm', seq(X, (-1.0 + brushL * 0.2) * (1 - up) - up * 1.3, Y, up * 0.6));
+      // hands push off the ground while rising, then brush, then rest on the hips
+      set('RightArm', seq(Z, 1.25 - up * 0.2, X, crouch * 0.6 + stand * ((-0.45 + brushR * 0.35) * (1 - up) + up * 0.1), Y, 0.1));
+      set('RightForeArm', seq(X, crouch * -0.3 + stand * ((-0.85 + brushR * 0.25) * (1 - up) - up * 1.3), Y, up * -0.6));
+      set('LeftArm', seq(Z, -1.15 + up * 0.15, X, crouch * 0.6 + stand * ((-0.9 + brushL * 0.45) * (1 - up) + up * 0.1), Y, -0.1));
+      set('LeftForeArm', seq(X, crouch * -0.3 + stand * ((-1.0 + brushL * 0.2) * (1 - up) - up * 1.3), Y, up * 0.6));
       set('RightHand', seq(X, -0.3)); set('LeftHand', seq(X, -0.3));
       for (const [side, s] of [['Left', 1], ['Right', -1]]) {
-        set(side + 'UpLeg', seq(X, -0.05, Z, s * 0.08));
-        set(side + 'Leg', seq(X, 0.08));
-        set(side + 'Foot', seq(X, 0));
+        set(side + 'UpLeg', seq(X, -1.3 * crouch - 0.05 * stand, Z, s * 0.1));
+        set(side + 'Leg', seq(X, 1.5 * crouch + 0.08 * stand));
+        set(side + 'Foot', seq(X, -0.2 * crouch));
       }
-    } else if (mode === 'walk') {
+    } else if (mode === 'jog') {
+      // an easy jog: bent arms pumping, knees up, a little forward lean and bounce
       const w = opts.walk ?? 1;
-      const phi = (opts.phase ?? T * 2 * Math.PI * 1.7);
-      set('Hips', seq(Y, Math.sin(phi) * 0.06 * w, Z, Math.sin(phi) * 0.03 * w));
-      set('Spine', seq(X, 0.06, Y, -Math.sin(phi) * 0.05 * w)); set('Spine1', seq(X, 0.03)); set('Spine2', seq(X, 0));
-      set('Neck', seq(X, -0.05)); set('Head', seq(X, -0.05, Y, Math.sin(T * 1.3) * 0.1));
+      const phi = (opts.phase ?? T * 2 * Math.PI * 2.6);
+      set('Hips', seq(X, 0.05 * w, Y, Math.sin(phi) * 0.08 * w, Z, Math.sin(phi) * 0.04 * w));
+      set('Spine', seq(X, 0.12 * w, Y, -Math.sin(phi) * 0.08 * w)); set('Spine1', seq(X, 0.06 * w)); set('Spine2', seq(X, 0.02 * w));
+      set('Neck', seq(X, -0.1 * w)); set('Head', seq(X, -0.08 * w, Y, Math.sin(T * 1.3) * 0.08));
       set('RightShoulder', seq(X, 0)); set('LeftShoulder', seq(X, 0));
-      set('RightArm', seq(Z, 1.4, X, Math.sin(phi) * 0.35 * w)); set('LeftArm', seq(Z, -1.4, X, -Math.sin(phi) * 0.35 * w));
-      set('RightForeArm', seq(X, -0.35 - Math.max(0, Math.sin(phi)) * 0.2 * w)); set('LeftForeArm', seq(X, -0.35 - Math.max(0, -Math.sin(phi)) * 0.2 * w));
-      set('RightHand', seq(X, -0.2)); set('LeftHand', seq(X, -0.2));
+      set('RightArm', seq(Z, 1.3, X, -0.15 * w + Math.sin(phi) * 0.5 * w)); set('LeftArm', seq(Z, -1.3, X, -0.15 * w - Math.sin(phi) * 0.5 * w));
+      set('RightForeArm', seq(X, -0.35 - 1.1 * w)); set('LeftForeArm', seq(X, -0.35 - 1.1 * w));
+      set('RightHand', seq(X, -0.35)); set('LeftHand', seq(X, -0.35));
       for (const [side, s, ph] of [['Left', 1, 0], ['Right', -1, Math.PI]]) {
         const sw = Math.sin(phi + ph);
-        set(side + 'UpLeg', seq(X, -sw * 0.5 * w, Z, s * 0.06));
-        set(side + 'Leg', seq(X, Math.max(0, -Math.sin(phi + ph - 0.9)) * 0.9 * w + 0.05));
-        set(side + 'Foot', seq(X, 0.05 + Math.max(0, -sw) * 0.2 * w));
+        set(side + 'UpLeg', seq(X, (-0.15 - sw * 0.6) * w, Z, s * 0.06));
+        set(side + 'Leg', seq(X, (Math.max(0, -Math.sin(phi + ph - 1.1)) * 1.25 + 0.15) * w + 0.05));
+        set(side + 'Foot', seq(X, 0.1 + Math.max(0, -sw) * 0.35 * w));
       }
     } else {
       // 'mount': the riding seat, hands to the reins
@@ -497,6 +525,22 @@ export class SkinnedCowboy {
     }
   }
 
+  // After posing and placing: lift the group so no key body point sits
+  // below the ground (heightFn gives ground height at x, z).
+  floorClamp(heightFn, margin = 0.07) {
+    this.group.updateMatrixWorld(true);
+    let lift = 0;
+    for (const nm of FLOOR_BONES) {
+      const b = this.bones[nm];
+      if (!b) continue;
+      b.getWorldPosition(_fp);
+      const need = heightFn(_fp.x, _fp.z) + margin - _fp.y;
+      if (need > lift) lift = need;
+    }
+    if (lift > 0) this.group.position.y += lift;
+    return lift;
+  }
+
   // world position between the two hands (where a rope round the wrists sits)
   wristsWorldPos(out) {
     const a = this.bones.smartrigRightHand.getWorldPosition(out);
@@ -504,4 +548,5 @@ export class SkinnedCowboy {
     return a.lerp(b, 0.5);
   }
 }
-const _wl = new THREE.Vector3();
+const _wl = new THREE.Vector3(), _fp = new THREE.Vector3();
+const FLOOR_BONES = ['smartrigHead', 'smartrigLeftHand', 'smartrigRightHand', 'smartrigLeftForeArm', 'smartrigRightForeArm', 'smartrigLeftLeg', 'smartrigRightLeg', 'smartrigLeftFoot', 'smartrigRightFoot', 'smartrigLeftToeBase', 'smartrigRightToeBase', 'smartrigHips', 'smartrigSpine1'];

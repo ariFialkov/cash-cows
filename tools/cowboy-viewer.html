@@ -37,7 +37,7 @@ const ct = await loadCowboy(idx);
 const outfit = q.get('random') === '1' ? randomOutfit() : playerOutfit(idx, 0xb03a2e);
 const groundMode = q.get('ground');
 if (groundMode) {
-  // off-horse poses: ?ground=roped|tantrum|dustoff|walk|mount&span=2
+  // off-horse poses: ?ground=roped|tantrum|dustoff|jog|mount&span=2
   const cb = new SkinnedCowboy(ct, outfit);
   scene.add(cb.group);
   const span = parseFloat(q.get('span') || '2'), dt = 1 / 60;
@@ -52,7 +52,7 @@ if (groundMode) {
   };
   for (let i = 0; i < FR; i++) {
     const until = t + span / FR;
-    while (t < until) { place(); cb.groundPose(groundMode, t, dt, { walk: 1, phase: t * 2 * Math.PI * 1.7 }); t += dt; }
+    while (t < until) { place(); cb.groundPose(groundMode, t, dt, { walk: 1, phase: t * 2 * Math.PI * 2.6, speed: 0.8, jerk: Math.max(0, Math.sin(t * 4)), kick: Math.max(0, Math.sin(t * 3 + 1)), kickSide: 1 }); cb.floorClamp(() => 0, 0.04); t += dt; }
     snap(i);
   }
 } else if (stand) {
