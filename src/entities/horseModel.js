@@ -40,6 +40,11 @@ function prepareTemplate(scene, type) {
   let mesh = null;
   scene.traverse((o) => { if (o.isSkinnedMesh) mesh = o; });
 
+  // some breeds' front legs are rigged shoulder→elbow→fetlock→pastern with no
+  // carpus; give them a knee so the cannon can fold
+  const frontChain = ensureFrontKnees(mesh);
+  scene.updateMatrixWorld(true);
+
   // measure from SKINNED vertex positions (what actually renders), not the
   // raw quantized geometry
   const pos = mesh.geometry.attributes.position;
@@ -87,7 +92,95 @@ function prepareTemplate(scene, type) {
   scene.getObjectByName('frontleg').getWorldPosition(sh);
   const legLen = (sh.y - min.y) * S;
 
-  return { scene, type, S, boneData, seat, size, mesh, groundY, legLen };
+  return { scene, type, S, boneData, seat, size, mesh, groundY, legLen, frontChain };
+}
+
+// ---------------------------------------------------------------------------
+// Front-leg knee insertion. Returns the bone-name chain per side:
+//   { L: [shoulder, elbow, knee, fetlock, pastern|null], R: [...] }
+
+const KNEE_FRAC = 0.47;   // carpus sits 47% of the way from fetlock up to elbow
+const KNEE_BLEND = 0.07;  // skin weight blend band around the joint (fraction of segment)
+
+function ensureFrontKnees(mesh) {
+  const skel = mesh.skeleton;
+  const names = skel.bones.map((b) => b.name);
+  const idx = (n) => names.indexOf(n);
+  const wy = (n) => { const p = new THREE.Vector3(); skel.bones[idx(n)].getWorldPosition(p); return p.y; };
+  // is the bone below the elbow a knee (mid-leg) or already the fetlock (low)?
+  const f = (wy('frontleg1') - wy('frontleg2')) / Math.max(1e-6, wy('frontleg0') - wy('frontleg2'));
+  if (f > 0.45) {
+    return {
+      L: ['frontleg', 'frontleg0', 'frontleg1', 'frontleg2', null],
+      R: ['R_frontleg', 'R_frontleg0', 'R_frontleg1', 'R_frontleg2', null],
+    };
+  }
+
+  const geo = mesh.geometry;
+  const si = geo.attributes.skinIndex, sw = geo.attributes.skinWeight;
+  const pos = geo.attributes.position;
+  const vtx = new THREE.Vector3();
+  const bones = [...skel.bones];
+  const inverses = skel.boneInverses.map((m) => m.clone());
+  const chain = {};
+
+  for (const side of ['', 'R_']) {
+    const elbowI = idx(side + 'frontleg0'), fetI = idx(side + 'frontleg1');
+    const elbow = bones[elbowI], fet = bones[fetI];
+
+    // new knee bone on the straight elbow→fetlock segment, elbow's orientation
+    const knee = new THREE.Bone();
+    knee.name = side + 'frontleg0k';
+    knee.position.copy(fet.position).multiplyScalar(1 - KNEE_FRAC);
+    elbow.add(knee);
+    fet.position.sub(knee.position);
+    knee.add(fet); // reparent: world transform of the fetlock is unchanged
+    const kneeI = bones.length;
+    bones.push(knee);
+    const elbowBind = inverses[elbowI].clone().invert();
+    const kneeBind = elbowBind.multiply(new THREE.Matrix4().makeTranslation(knee.position.x, knee.position.y, knee.position.z));
+    inverses.push(kneeBind.invert());
+
+    // re-skin: elbow-weighted vertices below the knee belong to the knee
+    mesh.updateMatrixWorld(true);
+    const eW = new THREE.Vector3(), fW = new THREE.Vector3();
+    elbow.getWorldPosition(eW);
+    fet.getWorldPosition(fW);
+    const dir = fW.clone().sub(eW);
+    const L = dir.length();
+    dir.divideScalar(L);
+    const t0 = (1 - KNEE_FRAC) - KNEE_BLEND, t1 = (1 - KNEE_FRAC) + KNEE_BLEND;
+    for (let i = 0; i < pos.count; i++) {
+      let slot = -1;
+      for (let j = 0; j < 4; j++) if (si.getComponent(i, j) === elbowI && sw.getComponent(i, j) > 0) slot = j;
+      if (slot < 0) continue;
+      mesh.getVertexPosition(i, vtx).applyMatrix4(mesh.matrixWorld);
+      const t = vtx.clone().sub(eW).dot(dir) / L;
+      if (t <= t0) continue;
+      const w = sw.getComponent(i, slot);
+      const kneeFrac = t >= t1 ? 1 : (t - t0) / (t1 - t0);
+      if (kneeFrac >= 1) {
+        si.setComponent(i, slot, kneeI);
+      } else {
+        // split across a free slot if there is one, else round to the heavier side
+        let free = -1;
+        for (let j = 0; j < 4; j++) if (sw.getComponent(i, j) === 0) { free = j; break; }
+        if (free >= 0) {
+          sw.setComponent(i, slot, w * (1 - kneeFrac));
+          si.setComponent(i, free, kneeI);
+          sw.setComponent(i, free, w * kneeFrac);
+        } else if (kneeFrac > 0.5) {
+          si.setComponent(i, slot, kneeI);
+        }
+      }
+    }
+    chain[side ? 'R' : 'L'] = [side + 'frontleg', side + 'frontleg0', knee.name, side + 'frontleg1', side + 'frontleg2'];
+  }
+  si.needsUpdate = true;
+  sw.needsUpdate = true;
+  const skeleton = new THREE.Skeleton(bones, inverses);
+  mesh.bind(skeleton, mesh.bindMatrix.clone());
+  return chain;
 }
 
 // ---------------------------------------------------------------------------
@@ -125,9 +218,8 @@ export function paintCoat(mesh, coat, seedIn = 7) {
     if (n.startsWith('tail')) return 'tail';
     if (n === 'head' || n === 'headend') return 'head';
     if (n.includes('earend')) return 'ear';
-    if (/^(R_)?frontleg[12]$/.test(n)) return n.startsWith('R_') ? 'legFR' : 'legFL';
+    if (/^(R_)?frontleg(0k|1|2)$/.test(n)) return n.startsWith('R_') ? 'legFR' : 'legFL';
     if (/^(R_)?backleg[12]$/.test(n)) return n.startsWith('R_') ? 'legHR' : 'legHL';
-    if (/^(R_)?frontleg2$/.test(n)) return n.startsWith('R_') ? 'legFR' : 'legFL';
     if (/^(R_)?backleg2$/.test(n)) return n.startsWith('R_') ? 'legHR' : 'legHL';
     return 'body';
   });
@@ -315,12 +407,21 @@ export class SkinnedHorseRider extends HorseRider {
     this._setRot('Hips', pose.pitch, 0, this.body.rotation.z);
     this._setRot('chest', pose.chestFlex, 0, 0);
 
-    const prefixes = ['frontleg', 'R_frontleg', 'backleg', 'R_backleg'];
-    for (let i = 0; i < 4; i++) {
-      const L = pose.legs[i], p = prefixes[i];
-      this._setRot(p, L.a, 0, 0);          // shoulder / hip
-      this._setRot(p + '0', L.b, 0, 0);    // elbow / stifle
-      this._setRot(p + '1', L.c, 0, 0);    // carpus / hock
+    const chains = [this.template.frontChain.L, this.template.frontChain.R];
+    for (let i = 0; i < 2; i++) {
+      const L = pose.legs[i], c = chains[i];
+      this._setRot(c[0], L.a, 0, 0);            // shoulder
+      this._setRot(c[1], L.b, 0, 0);            // elbow
+      this._setRot(c[2], L.c, 0, 0);            // knee (carpus)
+      this._setRot(c[3], L.d, 0, 0);            // fetlock
+      if (c[4]) this._setRot(c[4], L.d * 0.5, 0, 0); // pastern carries on the flex
+    }
+    const hinds = ['backleg', 'R_backleg'];
+    for (let i = 2; i < 4; i++) {
+      const L = pose.legs[i], p = hinds[i - 2];
+      this._setRot(p, L.a, 0, 0);          // hip
+      this._setRot(p + '0', L.b, 0, 0);    // stifle
+      this._setRot(p + '1', L.c, 0, 0);    // hock
       this._setRot(p + '2', L.d, 0, 0);    // fetlock
     }
 

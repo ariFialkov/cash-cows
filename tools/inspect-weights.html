@@ -1,0 +1,40 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<script type="importmap">
+{ "imports": { "three": "/node_modules/three/build/three.module.js",
+               "three/addons/": "/node_modules/three/examples/jsm/" } }
+</script></head><body><script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+const name = new URLSearchParams(location.search).get('m') || 'draft';
+const loader = new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder);
+loader.load(`/public/models/${name}.glb`, (g) => {
+  g.scene.updateMatrixWorld(true);
+  let mesh; g.scene.traverse((o) => { if (o.isSkinnedMesh) mesh = o; });
+  const geo = mesh.geometry, si = geo.attributes.skinIndex, sw = geo.attributes.skinWeight;
+  const names = mesh.skeleton.bones.map((b) => b.name);
+  const total = {}, dominant = {}, ymin = {}, ymax = {};
+  const v = new THREE.Vector3();
+  for (let i = 0; i < si.count; i++) {
+    mesh.getVertexPosition(i, v).applyMatrix4(mesh.matrixWorld);
+    let best = -1, bw = 0;
+    for (let j = 0; j < 4; j++) {
+      const n = names[si.getComponent(i, j)], w = sw.getComponent(i, j);
+      if (w <= 0) continue;
+      total[n] = (total[n] || 0) + w;
+      if (w > bw) { bw = w; best = n; }
+    }
+    if (best !== -1) {
+      dominant[best] = (dominant[best] || 0) + 1;
+      ymin[best] = Math.min(ymin[best] ?? 1e9, v.y); ymax[best] = Math.max(ymax[best] ?? -1e9, v.y);
+    }
+  }
+  const bonesY = {};
+  for (const b of mesh.skeleton.bones) { const p = new THREE.Vector3(); b.getWorldPosition(p); bonesY[b.name] = +p.y.toFixed(3); }
+  const out = {};
+  for (const n of names) if (/frontleg|backleg/.test(n)) out[n] = { boneY: bonesY[n], weightSum: +(total[n] || 0).toFixed(1), dominantVerts: dominant[n] || 0, span: [ymin[n]?.toFixed(3), ymax[n]?.toFixed(3)] };
+  window.__out = out;
+  document.title = 'done';
+});
+</script></body></html>

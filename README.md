@@ -105,7 +105,11 @@ Monte Carlo (2M draws per cow type ⇒ 0.952–0.962 across every type/strategy)
   spring-simulated tail chain, ear flicks, idle breathing and a cocked hind
   leg — all cross-faded through a shared phase so walk→trot→gallop re-times
   the legs smoothly. Per-type profiles set cadence, stride, suspension, knee
-  action and head/tail carriage. `tools/gait-viewer.html` renders one stride
+  action and head/tail carriage. Four of the five source rigs have no front
+  knee (forearm and cannon share one bone), so `horseModel.js` inserts a
+  carpus bone between elbow and fetlock at load time and re-skins the
+  forearm/cannon vertices onto it, letting the knee fold up in trot and
+  gallop swing. `tools/gait-viewer.html` renders one stride
   as a side-view filmstrip for tuning. Coats are painted into vertex
   colours from bind-pose position + bone weights — points, socks, blazes,
   dapples, pinto patches, leopard spots, roan, dorsal stripes, mane/tail and

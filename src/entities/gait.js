@@ -241,10 +241,14 @@ export class GaitEngine {
     const fold = Math.sin(Math.PI * Math.pow(w, 0.8));      // peaks early-mid swing
     const land = sstep(0.78, 1, w);                          // reach out for the ground
     if (front) {
+      // knee action: the carpus folds hard as the leg comes up — most of all
+      // at the trot, where the cannon swings up toward horizontal
+      const carpus = (0.85 * W.walk + 1.45 * W.mid + 1.15 * W.gallop) * kneeLift;
+      const elbow = (0.45 * W.walk + 0.7 * W.mid + 0.6 * W.gallop) * kneeLift;
       return {
         a: -prot,
-        b: -(0.55 * kneeLift) * fold,                         // elbow flexes forward
-        c: (0.9 * kneeLift) * fold * (1 - land * 0.6),        // carpus folds back, opens to land
+        b: -elbow * fold,                                     // elbow flexes, forearm lifts
+        c: carpus * fold * (1 - land * 0.65),                 // carpus folds back, opens to land
         d: 0.5 * fold * (1 - land) - 0.1 * land,              // hoof flips back, then levels
       };
     }
