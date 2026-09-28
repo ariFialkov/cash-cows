@@ -176,9 +176,12 @@ Monte Carlo (2M draws per cow type ⇒ 0.952–0.962 across every type/strategy)
   barn) sits on the valley floor; dirt trails lead out of the gates to a
   wooden bridge over the river and up to a lookout with a lone big tree.
   Riders and cattle roam a 1.1 km range around it. Terrain is rendered on the
-  GPU from the height texture — a fine 1.25 m disc that follows the rider over
-  an 8 m far mesh, both displacing a flat grid with the same bilinear fetch
-  the CPU uses for hooves, so ground contact is exact — coloured from a
+  GPU from the height texture — a fine 1.25 m disc and a 3 m mid disc that
+  follow the rider, displacing flat grids with the same bilinear fetch the
+  CPU uses for hooves, so ground contact is exact, over a static 8 m far
+  mesh whose vertices drop to the lowest ground in their footprint wherever
+  water lies within it, so the coarse triangles never cut up through a
+  river — coloured from a
   painted map (meadow, forest floor, bald, rock, sand, dirt) with a detail
   noise tile. Water is a ribbon per river/creek with rippled normals, fresnel
   and sun glint. The fence is a real obstacle (open at the gates), tree

@@ -17,6 +17,8 @@ const N = (WORLD_HALF * 2) / TEXEL + 1;
 
 const NEAR_R = 115;              // fine ground disc radius
 const NEAR_STEP = 1.25;
+const MID_R = 300;               // mid-detail disc radius
+const MID_STEP = 3;
 const FAR_STEP = 8;
 
 // kind mask values (per texel)
@@ -217,7 +219,7 @@ export class Terrain {
     // surface follows a heavily smoothed local ground level, forced to descend southward
     const step = 3;
     const raw = [];
-    for (let z = -WORLD_HALF - 6; z <= WORLD_HALF + 6; z += step) {
+    for (let z = -WORLD_HALF + 3; z <= WORLD_HALF - 3; z += step) {
       const x = this.riverX(z);
       raw.push({ x, z, h: this._sample(this.H, x, z) });
     }
@@ -430,18 +432,25 @@ export class Terrain {
       uN: { value: N },
       uPlayer: { value: new THREE.Vector3() },
       uNearR: { value: NEAR_R },
+      uMidR: { value: MID_R },
     };
 
-    const mkMat = (far) => {
+    // three levels of ground: a fine disc (1.25 m) and a mid disc (3 m) that
+    // both snap along with the rider and displace a flat grid from the height
+    // texture on the GPU, over a static far mesh (8 m) built on the CPU. Each
+    // level sinks out of sight under the finer one inside it, and each
+    // disc's rim drops as a skirt to close the seam.
+    const mkMat = (kind) => {
       const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, metalness: 0 });
-      // the two materials differ only inside the closure, so key their programs
-      // apart or three would compile one shader and hand it to both meshes
-      mat.customProgramCacheKey = () => (far ? 'terrain-far' : 'terrain-near');
+      // the materials differ only inside the closure, so key their programs
+      // apart or three would compile one shader and hand it to all of them
+      mat.customProgramCacheKey = () => 'terrain-' + kind;
       mat.onBeforeCompile = (shader) => {
         Object.assign(shader.uniforms, this.uniforms);
+        const gpu = kind !== 'far';
         shader.vertexShader = `
           uniform sampler2D uHeight; uniform float uHalf; uniform float uTexel; uniform float uN;
-          uniform vec3 uPlayer; uniform float uNearR;
+          uniform vec3 uPlayer; uniform float uNearR; uniform float uMidR;
           varying vec2 vWxz;
           float hFetch(ivec2 i){ i = clamp(i, ivec2(0), ivec2(int(uN) - 1)); return texelFetch(uHeight, i, 0).r; }
           float hAt(vec2 p){
@@ -451,25 +460,30 @@ export class Terrain {
             return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
           }
         ` + shader.vertexShader
-          .replace('#include <beginnormal_vertex>', `
+          .replace('#include <beginnormal_vertex>', gpu ? `
             vec4 wp0 = modelMatrix * vec4(position, 1.0);
             vec2 wxz = wp0.xz;
-            float e = ${far ? '3.0' : '0.8'};
+            float e = ${kind === 'mid' ? '1.6' : '0.8'};
             float hx0 = hAt(wxz - vec2(e, 0.0)), hx1 = hAt(wxz + vec2(e, 0.0));
             float hz0 = hAt(wxz - vec2(0.0, e)), hz1 = hAt(wxz + vec2(0.0, e));
             vec3 objectNormal = normalize(vec3(hx0 - hx1, 2.0 * e, hz0 - hz1));
             #ifdef USE_TANGENT
               vec3 objectTangent = vec3( tangent.xyz );
             #endif
+          ` : `
+            #include <beginnormal_vertex>
+            vec2 wxz = (modelMatrix * vec4(position, 1.0)).xz;
           `)
           .replace('#include <begin_vertex>', `
             vec3 transformed = vec3(position);
-            transformed.y = hAt(wxz);
+            ${gpu ? 'transformed.y = hAt(wxz);' : ''}
             vWxz = wxz;
             float dd = distance(wxz, uPlayer.xz);
-            ${far
-              ? 'transformed.y -= 3.0 * (1.0 - smoothstep(uNearR - 4.0, uNearR + 7.0, dd));'
-              : 'float rr = length(position.xz); transformed.y -= max(0.0, rr - (uNearR - 3.0)) * 1.6;'}
+            ${kind === 'near'
+              ? 'float rr = length(position.xz); transformed.y -= max(0.0, rr - (uNearR - 3.0)) * 1.6;'
+              : kind === 'mid'
+                ? 'transformed.y -= 2.0 * (1.0 - smoothstep(uNearR - 4.0, uNearR + 7.0, dd)); float rr = length(position.xz); transformed.y -= max(0.0, rr - (uMidR - 6.0)) * 1.6;'
+                : 'transformed.y -= 3.0 * (1.0 - smoothstep(uMidR - 8.0, uMidR + 12.0, dd));'}
           `);
         shader.fragmentShader = `
           uniform sampler2D uColor; uniform sampler2D uDetail; uniform float uHalf; uniform float uTexel; uniform float uN;
@@ -486,37 +500,74 @@ export class Terrain {
       return mat;
     };
 
-    // far: the whole world on a coarse grid, sunk out of sight under the near disc
-    const farGeo = new THREE.PlaneGeometry(WORLD_HALF * 2, WORLD_HALF * 2, Math.round(WORLD_HALF * 2 / FAR_STEP), Math.round(WORLD_HALF * 2 / FAR_STEP));
+    // a flat disc grid: cells kept only where they reach inside radius R
+    const disc = (R, step) => {
+      const n = Math.ceil((R * 2) / step);
+      const geo = new THREE.PlaneGeometry(R * 2, R * 2, n, n);
+      geo.rotateX(-Math.PI / 2);
+      const pos = geo.attributes.position;
+      const idx = geo.index.array;
+      const keep = [];
+      const R2 = (R + 2) * (R + 2);
+      for (let t = 0; t < idx.length; t += 3) {
+        let inside = false;
+        for (let k = 0; k < 3; k++) {
+          const v = idx[t + k];
+          const x = pos.getX(v), z = pos.getZ(v);
+          if (x * x + z * z < R2) { inside = true; break; }
+        }
+        if (inside) keep.push(idx[t], idx[t + 1], idx[t + 2]);
+      }
+      geo.setIndex(keep);
+      geo.computeBoundingSphere();
+      geo.boundingSphere.radius += 250;
+      return geo;
+    };
+
+    // far: the whole world on a coarse grid with heights baked in. A coarse
+    // triangle can't follow a river channel, so wherever water lies within a
+    // vertex's footprint the vertex takes the lowest ground there: the far
+    // mesh then always lies under the water instead of cutting up through it
+    const segs = Math.round(WORLD_HALF * 2 / FAR_STEP);
+    const farGeo = new THREE.PlaneGeometry(WORLD_HALF * 2, WORLD_HALF * 2, segs, segs);
     farGeo.rotateX(-Math.PI / 2);
+    {
+      const pos = farGeo.attributes.position;
+      const H = this.H, Wl = this.Wl;
+      const reach = Math.ceil((FAR_STEP * 0.75) / TEXEL);
+      for (let v = 0; v < pos.count; v++) {
+        const x = pos.getX(v), z = pos.getZ(v);
+        let h = this._sample(H, x, z);
+        const i0 = Math.round((x + WORLD_HALF) / TEXEL), j0 = Math.round((z + WORLD_HALF) / TEXEL);
+        let wet = false, lo = h;
+        for (let j = j0 - reach; j <= j0 + reach && !wet; j++) for (let i = i0 - reach; i <= i0 + reach; i++) {
+          if (i < 0 || j < 0 || i >= N || j >= N) continue;
+          if (Wl[j * N + i] > -1e8) { wet = true; break; }
+        }
+        if (wet) {
+          for (let j = j0 - reach; j <= j0 + reach; j++) for (let i = i0 - reach; i <= i0 + reach; i++) {
+            if (i < 0 || j < 0 || i >= N || j >= N) continue;
+            if (H[j * N + i] < lo) lo = H[j * N + i];
+          }
+          h = lo;
+        }
+        pos.setY(v, h);
+      }
+      farGeo.computeVertexNormals();
+    }
     farGeo.computeBoundingSphere();
     farGeo.boundingSphere.radius += 250;
-    this.far = new THREE.Mesh(farGeo, mkMat(true));
+    this.far = new THREE.Mesh(farGeo, mkMat('far'));
     this.far.receiveShadow = true;
     this.far.frustumCulled = false;
     scene.add(this.far);
 
-    // near: a fine disc that snaps along with the rider; its rim drops as a skirt
-    const n = Math.ceil((NEAR_R * 2) / NEAR_STEP);
-    const nearGeo = new THREE.PlaneGeometry(NEAR_R * 2, NEAR_R * 2, n, n);
-    nearGeo.rotateX(-Math.PI / 2);
-    const pos = nearGeo.attributes.position;
-    const idx = nearGeo.index.array;
-    const keep = [];
-    const R2 = (NEAR_R + 2) * (NEAR_R + 2);
-    for (let t = 0; t < idx.length; t += 3) {
-      let inside = false;
-      for (let k = 0; k < 3; k++) {
-        const v = idx[t + k];
-        const x = pos.getX(v), z = pos.getZ(v);
-        if (x * x + z * z < R2) { inside = true; break; }
-      }
-      if (inside) keep.push(idx[t], idx[t + 1], idx[t + 2]);
-    }
-    nearGeo.setIndex(keep);
-    nearGeo.computeBoundingSphere();
-    nearGeo.boundingSphere.radius += 250;
-    this.near = new THREE.Mesh(nearGeo, mkMat(false));
+    this.mid = new THREE.Mesh(disc(MID_R, MID_STEP), mkMat('mid'));
+    this.mid.receiveShadow = true;
+    this.mid.frustumCulled = false;
+    scene.add(this.mid);
+
+    this.near = new THREE.Mesh(disc(NEAR_R, NEAR_STEP), mkMat('near'));
     this.near.receiveShadow = true;
     this.near.frustumCulled = false;
     scene.add(this.near);
@@ -583,8 +634,9 @@ export class Terrain {
 
   update(playerPos, dt, time) {
     this.uniforms.uPlayer.value.copy(playerPos);
-    const snap = NEAR_STEP * 2;
+    const snap = NEAR_STEP * 2, snapM = MID_STEP * 2;
     this.near.position.set(Math.round(playerPos.x / snap) * snap, 0, Math.round(playerPos.z / snap) * snap);
+    this.mid.position.set(Math.round(playerPos.x / snapM) * snapM, 0, Math.round(playerPos.z / snapM) * snapM);
     this.waterMat.uniforms.uTime.value = time;
     void dt;
   }

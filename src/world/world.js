@@ -223,7 +223,8 @@ export class World {
   }
 
   _buildSky() {
-    const geo = new THREE.SphereGeometry(1900, 32, 16);
+    // the dome rides along with the player so it always sits inside the camera's far plane
+    const geo = new THREE.SphereGeometry(1500, 32, 16);
     const mat = new THREE.ShaderMaterial({
       side: THREE.BackSide,
       depthWrite: false,
@@ -249,7 +250,9 @@ export class World {
           gl_FragColor = vec4(c, 1.0);
         }`,
     });
-    this.scene.add(new THREE.Mesh(geo, mat));
+    this.sky = new THREE.Mesh(geo, mat);
+    this.sky.frustumCulled = false;
+    this.scene.add(this.sky);
     // blue mountain haze: the far ridges fade into the sky
     this.scene.fog = new THREE.Fog(0xc6d7e5, 230, 1300);
   }
@@ -493,8 +496,10 @@ export class World {
           #include <clipping_planes_fragment>
           vec2 toCam = uCam.xz - uPlayer.xz;
           vec2 rel = vWp - uPlayer.xz;
-          float along = dot(rel, normalize(toCam));
-          float side = length(rel - normalize(toCam) * along);
+          float tl = length(toCam);
+          vec2 tdir = tl > 0.5 ? toCam / tl : vec2(0.0, 1.0);
+          float along = dot(rel, tdir);
+          float side = length(rel - tdir * along);
           float keep = max(smoothstep(-2.0, 0.5, -along), smoothstep(6.0, 10.0, side));
           float th = fract(52.9829189 * fract(0.06711056 * gl_FragCoord.x + 0.00583715 * gl_FragCoord.y));
           if (keep < th) discard;
@@ -604,6 +609,7 @@ export class World {
     this.sun.target.position.set(playerPos.x, playerPos.y, playerPos.z);
     this._canopyU.uPlayer.value.copy(playerPos);
     if (camPos) this._canopyU.uCam.value.copy(camPos);
+    this.sky.position.set(playerPos.x, 0, playerPos.z);
     this.terrain.update(playerPos, dt, time);
     this.grass.update(playerPos, dt, time, movers);
     for (const c of this.clouds.children) {
