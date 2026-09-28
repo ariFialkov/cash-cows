@@ -12,7 +12,7 @@ import { loadHorseType, SkinnedHorseRider } from '/src/entities/horseModel.js';
 const q = new URLSearchParams(location.search);
 const species = getSpecies(q.get('species') || 'quarter');
 const speed = parseFloat(q.get('speed') || '4');
-const FR = 6, W = 250, H = 400;
+const FR = parseInt(q.get('frames') || '6'), W = parseInt(q.get('w') || '250'), H = 400;
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(W * FR, H);
@@ -41,6 +41,16 @@ for (let i = 0; i < 120 * 4; i++) { rig.animate(dt, speed, 0, 'rest', t); rig.po
 const startPhase = Math.floor(rig.engine.phase) + 1;
 let captured = 0, lastBin = -1;
 renderer.setScissorTest(true);
+// world-space segment angles of the left foreleg + neck, degrees from
+// straight down (positive = distal end forward), for tuning
+const bones = {}; rig.model.traverse((o) => { if (o.isBone) bones[o.name] = o; });
+const chain = template.frontChain.L;
+const segAngle = (a, b) => {
+  const pa = new THREE.Vector3(), pb = new THREE.Vector3();
+  bones[a].getWorldPosition(pa); bones[b].getWorldPosition(pb);
+  return Math.round(THREE.MathUtils.radToDeg(Math.atan2(pb.z - pa.z, -(pb.y - pa.y))));
+};
+const angles = [];
 while (captured < FR) {
   rig.animate(dt, speed, 0, 'rest', t); rig.postPose(); t += dt;
   const ph = rig.engine.phase;
@@ -50,11 +60,21 @@ while (captured < FR) {
     renderer.setViewport(captured * W, 0, W, H);
     renderer.setScissor(captured * W, 0, W, H);
     renderer.render(scene, camera);
+    rig.model.updateMatrixWorld(true);
+    const [sh, el, kn, fe, pa] = chain;
+    angles.push({
+      lp: +((ph - startPhase)).toFixed(2),
+      arm: segAngle(sh, el), forearm: segAngle(el, kn), cannon: segAngle(kn, fe),
+      pastern: pa ? segAngle(fe, pa) : null,
+      neck: segAngle('chest', 'skull') - 90, // degrees below horizontal (neg = raised)
+      face: segAngle('skull', 'headend') - 90,
+    });
     captured++;
     lastBin = bin;
   }
   if (ph - startPhase > 2) break;
 }
-window.__done = { freq: rig.engine.speedSm, w: { ...rig.engine.w } };
+window.__done = { freq: rig.engine.speedSm, w: { ...rig.engine.w }, angles };
+window.__rig = rig; window.__THREE = THREE;
 document.title = 'done';
 </script></body></html>

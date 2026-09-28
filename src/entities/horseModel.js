@@ -44,6 +44,10 @@ function prepareTemplate(scene, type) {
   // carpus; give them a knee so the cannon can fold
   const frontChain = ensureFrontKnees(mesh);
   scene.updateMatrixWorld(true);
+  // the rigs' single 'head' bone carries neck AND skull; split a skull bone
+  // off at the poll so the neck can drop while the nose reaches out
+  ensureSkull(mesh);
+  scene.updateMatrixWorld(true);
 
   // measure from SKINNED vertex positions (what actually renders), not the
   // raw quantized geometry
@@ -184,6 +188,84 @@ function ensureFrontKnees(mesh) {
 }
 
 // ---------------------------------------------------------------------------
+// Skull insertion. The 'head' bone pivots mid-neck and is skinned to the
+// whole neck + head, so a new 'skull' bone is placed at the poll (between the
+// head pivot and the ears), the ear/head-end bones are re-parented under it,
+// and head-weighted vertices forward of the throatlatch are re-skinned to it.
+
+const SKULL_FRAC = 0.7;    // poll sits 70% of the way from the head pivot to the ears
+const SKULL_CUT = 0.16;    // split plane offset (fraction of pivot→ear distance)
+const SKULL_BLEND = 0.14;  // blend band either side of the split (same units)
+
+function ensureSkull(mesh) {
+  const skel = mesh.skeleton;
+  const names = skel.bones.map((b) => b.name);
+  const idx = (n) => names.indexOf(n);
+  const headI = idx('head');
+  if (headI < 0 || idx('skull') >= 0) return;
+  const head = skel.bones[headI];
+  const wp = (n) => { const p = new THREE.Vector3(); skel.bones[idx(n)].getWorldPosition(p); return p; };
+  const headW = wp('head');
+  const earMid = wp('earend').add(wp('R_earend')).multiplyScalar(0.5);
+  const toEar = earMid.clone().sub(headW);
+  const D = toEar.length();
+
+  // new bone at the poll, keeping the head bone's orientation
+  const pollW = headW.clone().addScaledVector(toEar, SKULL_FRAC);
+  const skull = new THREE.Bone();
+  skull.name = 'skull';
+  skull.position.copy(head.worldToLocal(pollW.clone()));
+  head.add(skull);
+  head.updateWorldMatrix(true, true);
+  // ears and head end ride on the skull
+  for (const c of [...head.children]) if (c !== skull && c.isBone) skull.attach(c);
+
+  const bones = [...skel.bones];
+  const inverses = skel.boneInverses.map((m) => m.clone());
+  const skullI = bones.length;
+  bones.push(skull);
+  const headBind = inverses[headI].clone().invert();
+  const skullBind = headBind.multiply(new THREE.Matrix4().makeTranslation(skull.position.x, skull.position.y, skull.position.z));
+  inverses.push(skullBind.invert());
+
+  // split plane: mostly forward, a little up, through a point just ahead of the
+  // pivot — separates the skull + jaw from the neck at the throatlatch
+  const n = new THREE.Vector3(0, 0.35, 0.94).normalize();
+  const geo = mesh.geometry;
+  const si = geo.attributes.skinIndex, sw = geo.attributes.skinWeight;
+  const pos = geo.attributes.position;
+  const vtx = new THREE.Vector3();
+  mesh.updateMatrixWorld(true);
+  const d0 = (SKULL_CUT - SKULL_BLEND) * D, d1 = (SKULL_CUT + SKULL_BLEND) * D;
+  for (let i = 0; i < pos.count; i++) {
+    let slot = -1;
+    for (let j = 0; j < 4; j++) if (si.getComponent(i, j) === headI && sw.getComponent(i, j) > 0) slot = j;
+    if (slot < 0) continue;
+    mesh.getVertexPosition(i, vtx).applyMatrix4(mesh.matrixWorld);
+    const d = vtx.sub(headW).dot(n);
+    if (d <= d0) continue;
+    const w = sw.getComponent(i, slot);
+    const f = d >= d1 ? 1 : (d - d0) / (d1 - d0);
+    if (f >= 1) {
+      si.setComponent(i, slot, skullI);
+    } else {
+      let free = -1;
+      for (let j = 0; j < 4; j++) if (sw.getComponent(i, j) === 0) { free = j; break; }
+      if (free >= 0) {
+        sw.setComponent(i, slot, w * (1 - f));
+        si.setComponent(i, free, skullI);
+        sw.setComponent(i, free, w * f);
+      } else if (f > 0.5) {
+        si.setComponent(i, slot, skullI);
+      }
+    }
+  }
+  si.needsUpdate = true;
+  sw.needsUpdate = true;
+  mesh.bind(new THREE.Skeleton(bones, inverses), mesh.bindMatrix.clone());
+}
+
+// ---------------------------------------------------------------------------
 // Coat painting: vertex colours from bind-pose position + bone weights.
 
 const _c = new THREE.Color(), _c2 = new THREE.Color();
@@ -216,7 +298,7 @@ export function paintCoat(mesh, coat, seedIn = 7) {
   // bone groups by index
   const groupOf = names.map((n) => {
     if (n.startsWith('tail')) return 'tail';
-    if (n === 'head' || n === 'headend') return 'head';
+    if (n === 'head' || n === 'headend' || n === 'skull') return 'head';
     if (n.includes('earend')) return 'ear';
     if (/^(R_)?frontleg(0k|1|2)$/.test(n)) return n.startsWith('R_') ? 'legFR' : 'legFL';
     if (/^(R_)?backleg[12]$/.test(n)) return n.startsWith('R_') ? 'legHR' : 'legHL';
@@ -393,6 +475,7 @@ export class SkinnedHorseRider extends HorseRider {
     }
     pose.neck = mix(pose.neck, 0.45);
     pose.headX = mix(pose.headX, -0.15);
+    pose.head = mix(pose.head, -0.3);  // nose out over the fence
     pose.tail[0].x = mix(pose.tail[0].x, 0.5);
     // rider rises into two-point
     this.torso.rotation.x += (0.55 - this.torso.rotation.x) * w;
@@ -426,6 +509,7 @@ export class SkinnedHorseRider extends HorseRider {
     }
 
     this._setRot('head', pose.neck + pose.headX * 0.7, pose.headYaw, 0);
+    this._setRot('skull', pose.head, pose.headYaw * 0.5, 0);
     this._setRot('earend', 0, 0, pose.ears[0]);
     this._setRot('R_earend', 0, 0, pose.ears[1]);
     const tailNames = ['tail', 'tailstart', 'tail1', 'tail2', 'tail3'];

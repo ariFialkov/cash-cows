@@ -118,7 +118,7 @@ export class GaitEngine {
 
     const pose = {
       bodyY: 0, pitch: 0, roll: 0, chestFlex: 0,
-      neck: 0, headX: 0, headYaw: THREE.MathUtils.clamp(this.leanSm * 0.35, -0.4, 0.4),
+      neck: 0, head: 0, headX: 0, headYaw: THREE.MathUtils.clamp(this.leanSm * 0.35, -0.4, 0.4),
       legs: [], ears: [0, 0], tail: [],
     };
 
@@ -154,23 +154,34 @@ export class GaitEngine {
     const galBob = -0.065 * p.suspension * Math.cos(TAU * (P - 0.4));
     const galPitch = 0.075 * Math.cos(TAU * (P - 0.4));
     const galFlex = 0.07 * Math.cos(TAU * (P - 0.92));       // back rounds while gathering
-    const galNod = 0.13 * p.headNod * Math.cos(TAU * (P - 0.35)); // neck pumps out on the reach
+    // gallop: the neck pumps hard — reaches out and down as the forelegs
+    // land, comes back up through the drive and suspension
+    const galNod = 0.24 * p.headNod * Math.cos(TAU * (P - 0.35));
+    // full gallop: neck stretched low and long, nose poked out (flat, aerodynamic)
+    const st = p.stretch ?? 1; // per-type: how flat-out the gallop neck gets
+    const flatOut = W.gallop * Math.min(1, Math.max(0, (v - p.gallopMin) / 5)) * st; // 0..1 as speed climbs past the gallop threshold
 
     pose.bodyY = (walkBob * W.walk + trotBob * W.mid + galBob * W.gallop) * bobS
       + W.gallop * 0.02 * bobS;
     pose.pitch = (trotPitch * W.mid + galPitch * W.gallop) * p.pitchScale;
     pose.roll = walkRoll * W.walk + THREE.MathUtils.clamp(-this.leanSm * 0.12, -0.18, 0.18);
     pose.chestFlex = -pose.pitch * 0.45 + galFlex * W.gallop;
-    const carriage = p.neckCarriage + Math.min(1, v / 9) * 0.32;
+    const carriage = p.neckCarriage + Math.min(1, v / 9) * 0.32 + W.gallop * 0.2 * st + flatOut * 0.22;
     pose.neck = carriage + walkNod * W.walk + trotNod * W.mid + galNod * W.gallop
       + this._noise(time, 3) * 0.02;
     pose.headX = -Math.min(1, v / 9) * 0.18;
+    // skull at the poll: nose out as the neck drops, so the face stays
+    // reaching forward rather than tucking; counter-nods a little so the
+    // head doesn't bob as much as the neck
+    pose.head = -Math.min(1, v / 9) * 0.12 - W.gallop * 0.45 * st - flatOut * 0.3
+      - galNod * W.gallop * 0.4 - walkNod * W.walk * 0.3;
 
     // ---- idle life: breathing, weight shift, head drift ----
     const breath = Math.sin(time * 1.4 + this.noiseSeed) * 0.004;
     pose.bodyY += breath * W.idle;
     pose.roll += W.idle * this._noise(time * 0.5, 4) * 0.012;
     pose.neck += W.idle * (this._noise(time * 0.35, 5) * 0.06 + 0.03);
+    pose.head += W.idle * this._noise(time * 0.45, 9) * 0.05;
     pose.headYaw += W.idle * this._noise(time * 0.3, 6) * 0.12;
 
     // ---- ears: idle drift + random flicks ----
@@ -237,21 +248,28 @@ export class GaitEngine {
     }
     // ---- swing: limb folds, protracts, then extends for touchdown ----
     const w = (lp - duty) / (1 - duty);
-    const prot = lerp(-back, reach, smooth(w));
     const fold = Math.sin(Math.PI * Math.pow(w, 0.8));      // peaks early-mid swing
     const land = sstep(0.78, 1, w);                          // reach out for the ground
     if (front) {
-      // knee action: the carpus folds hard as the leg comes up — most of all
-      // at the trot, where the cannon swings up toward horizontal
-      const carpus = (0.85 * W.walk + 1.45 * W.mid + 1.15 * W.gallop) * kneeLift;
-      const elbow = (0.45 * W.walk + 0.7 * W.mid + 0.6 * W.gallop) * kneeLift;
+      // Competition-trot knee action. The forearm lifts toward horizontal
+      // with the elbow, and the carpus folds by (a bit more than) the same
+      // angle, so at the top of the lift the cannon hangs vertical / a touch
+      // back with the hoof pointing down. Right after breakover the hoof
+      // trails back briefly (early), then everything unfolds forward to land.
+      const prot = lerp(-back, reach, smooth(Math.min(1, w / 0.85)));
+      const lift = Math.sin(Math.PI * Math.pow(w, 1.1));    // peaks just past mid-swing
+      const early = Math.sin(Math.PI * Math.min(1, w / 0.6)) * (1 - w);
+      const kl = 0.7 + 0.3 * kneeLift;
+      const elbow = (0.55 * W.walk + 0.9 * W.mid + 0.8 * W.gallop) * kl;
+      const carpus = elbow + (0.18 * W.walk + 0.28 * W.mid + 0.22 * W.gallop) * kl;
       return {
         a: -prot,
-        b: -elbow * fold,                                     // elbow flexes, forearm lifts
-        c: carpus * fold * (1 - land * 0.65),                 // carpus folds back, opens to land
-        d: 0.5 * fold * (1 - land) - 0.1 * land,              // hoof flips back, then levels
+        b: -elbow * lift,                                      // elbow flexes, forearm lifts
+        c: carpus * lift * (1 - land * 0.7) + 0.45 * early,   // cannon hangs, then reaches
+        d: 0.5 * lift * (1 - land) + 0.25 * early - 0.1 * land, // hoof points down, levels to land
       };
     }
+    const prot = lerp(-back, reach, smooth(w));
     return {
       a: -prot,
       b: (0.55 * hockLift) * fold,                            // stifle flexes

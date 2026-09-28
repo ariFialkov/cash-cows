@@ -108,8 +108,11 @@ Monte Carlo (2M draws per cow type ⇒ 0.952–0.962 across every type/strategy)
   action and head/tail carriage. Four of the five source rigs have no front
   knee (forearm and cannon share one bone), so `horseModel.js` inserts a
   carpus bone between elbow and fetlock at load time and re-skins the
-  forearm/cannon vertices onto it, letting the knee fold up in trot and
-  gallop swing. `tools/gait-viewer.html` renders one stride
+  forearm/cannon vertices onto it, so the lifted foreleg folds like a
+  competition trot: forearm up, cannon hanging vertical, hoof pointing down.
+  The single neck+head bone is likewise split with a skull bone at the poll,
+  so at a full gallop the neck drops and pumps while the nose reaches out
+  (per-type `stretch` sets how flat-out each breed gets). `tools/gait-viewer.html` renders one stride
   as a side-view filmstrip for tuning. Coats are painted into vertex
   colours from bind-pose position + bone weights — points, socks, blazes,
   dapples, pinto patches, leopard spots, roan, dorsal stripes, mane/tail and

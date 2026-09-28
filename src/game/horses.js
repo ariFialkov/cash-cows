@@ -18,6 +18,7 @@
 //   bobScale, suspension, pitchScale   how much the body rises and rocks
 //   kneeLift, hockLift   fore/hind leg fold height in swing ("knee action")
 //   neckCarriage (rad, + = lower/forward), headNod, tailCarriage
+//   stretch              how low/flat the neck + head reach at a full gallop
 
 export const HORSE_TYPES = {
   draft: {
@@ -26,7 +27,7 @@ export const HORSE_TYPES = {
     height: 2.05, // metres to the ear tips at scale 1
     blurb: 'Big, calm and powerful. Slow to get going and slow to turn, but nothing unsettles a draft — rock-steady handling.',
     stats: { speed: 0.42, agility: 0.32, handling: 0.95 },
-    gait: { midGait: 'trot', midMin: 2.8, gallopMin: 7.8, strideScale: 1.08, freqScale: 0.9, bobScale: 1.3, suspension: 0.9, pitchScale: 1.1, kneeLift: 1.35, hockLift: 1.2, neckCarriage: -0.05, headNod: 1.3, tailCarriage: -0.1 },
+    gait: { midGait: 'trot', midMin: 2.8, gallopMin: 7.8, strideScale: 1.08, freqScale: 0.9, bobScale: 1.3, suspension: 0.9, pitchScale: 1.1, kneeLift: 1.35, hockLift: 1.2, neckCarriage: -0.05, headNod: 1.3, tailCarriage: -0.1, stretch: 0.5 },
   },
   gaited: {
     name: 'Gaited',
@@ -34,7 +35,7 @@ export const HORSE_TYPES = {
     height: 1.8,
     blurb: 'Bred for a smooth four-beat running walk. Quick, busy legs with almost no bounce, head carried high and proud.',
     stats: { speed: 0.6, agility: 0.62, handling: 0.82 },
-    gait: { midGait: 'runwalk', midMin: 2.2, gallopMin: 7.6, strideScale: 0.92, freqScale: 1.2, bobScale: 0.35, suspension: 0.5, pitchScale: 0.5, kneeLift: 1.4, hockLift: 1.3, neckCarriage: -0.2, headNod: 1.4, tailCarriage: 0.1 },
+    gait: { midGait: 'runwalk', midMin: 2.2, gallopMin: 7.6, strideScale: 0.92, freqScale: 1.2, bobScale: 0.35, suspension: 0.5, pitchScale: 0.5, kneeLift: 1.4, hockLift: 1.3, neckCarriage: -0.2, headNod: 1.4, tailCarriage: 0.1, stretch: 0.75 },
   },
   warmblood: {
     name: 'Warmblood',
@@ -42,7 +43,7 @@ export const HORSE_TYPES = {
     height: 1.95,
     blurb: 'The sport horse. Long floating strides with real suspension, balanced and athletic — the all-rounder.',
     stats: { speed: 0.76, agility: 0.7, handling: 0.74 },
-    gait: { midGait: 'trot', midMin: 2.6, gallopMin: 7.2, strideScale: 1.12, freqScale: 0.95, bobScale: 1.15, suspension: 1.3, pitchScale: 1.0, kneeLift: 1.0, hockLift: 1.05, neckCarriage: -0.02, headNod: 1.0, tailCarriage: 0.02 },
+    gait: { midGait: 'trot', midMin: 2.6, gallopMin: 7.2, strideScale: 1.12, freqScale: 0.95, bobScale: 1.15, suspension: 1.3, pitchScale: 1.0, kneeLift: 1.0, hockLift: 1.05, neckCarriage: -0.02, headNod: 1.0, tailCarriage: 0.02, stretch: 0.95 },
   },
   light: {
     name: 'Light',
@@ -50,7 +51,7 @@ export const HORSE_TYPES = {
     height: 1.85,
     blurb: 'Hot-blooded speed horses. Fastest on the range and quick on their feet, but they get away from you in a hurry.',
     stats: { speed: 1.0, agility: 0.86, handling: 0.5 },
-    gait: { midGait: 'trot', midMin: 2.6, gallopMin: 6.8, strideScale: 1.15, freqScale: 1.05, bobScale: 0.85, suspension: 1.0, pitchScale: 0.9, kneeLift: 0.8, hockLift: 0.9, neckCarriage: 0.06, headNod: 0.8, tailCarriage: 0.3 },
+    gait: { midGait: 'trot', midMin: 2.6, gallopMin: 6.8, strideScale: 1.15, freqScale: 1.05, bobScale: 0.85, suspension: 1.0, pitchScale: 0.9, kneeLift: 0.8, hockLift: 0.9, neckCarriage: 0.06, headNod: 0.8, tailCarriage: 0.3, stretch: 1.1 },
   },
   pony: {
     name: 'Pony',
@@ -58,7 +59,7 @@ export const HORSE_TYPES = {
     height: 1.45,
     blurb: 'Small, nimble and cheeky. Short choppy strides and the tightest turning circle out here.',
     stats: { speed: 0.5, agility: 1.0, handling: 0.68 },
-    gait: { midGait: 'trot', midMin: 2.3, gallopMin: 6.5, strideScale: 0.78, freqScale: 1.35, bobScale: 0.7, suspension: 0.8, pitchScale: 0.8, kneeLift: 1.05, hockLift: 1.0, neckCarriage: 0, headNod: 1.1, tailCarriage: 0 },
+    gait: { midGait: 'trot', midMin: 2.3, gallopMin: 6.5, strideScale: 0.78, freqScale: 1.35, bobScale: 0.7, suspension: 0.8, pitchScale: 0.8, kneeLift: 1.05, hockLift: 1.0, neckCarriage: 0, headNod: 1.1, tailCarriage: 0, stretch: 0.85 },
   },
 };
 

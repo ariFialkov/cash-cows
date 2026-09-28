@@ -33,7 +33,7 @@ loader.load(`/public/models/${name}.glb`, (g) => {
   const bonesY = {};
   for (const b of mesh.skeleton.bones) { const p = new THREE.Vector3(); b.getWorldPosition(p); bonesY[b.name] = +p.y.toFixed(3); }
   const out = {};
-  for (const n of names) if (/frontleg|backleg/.test(n)) out[n] = { boneY: bonesY[n], weightSum: +(total[n] || 0).toFixed(1), dominantVerts: dominant[n] || 0, span: [ymin[n]?.toFixed(3), ymax[n]?.toFixed(3)] };
+  for (const n of names) if (/frontleg|backleg|head|ear|chest|Hips/.test(n)) out[n] = { boneY: bonesY[n], weightSum: +(total[n] || 0).toFixed(1), dominantVerts: dominant[n] || 0, span: [ymin[n]?.toFixed(3), ymax[n]?.toFixed(3)] };
   window.__out = out;
   document.title = 'done';
 });
