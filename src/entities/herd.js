@@ -2,7 +2,7 @@
 // of specials, and keeps the population topped up as cows are wrangled.
 
 import * as THREE from 'three';
-import { Cow } from './cow.js';
+import { Cow, preloadCows } from './cow.js';
 import { PEN_HALF } from '../world/world.js';
 
 const TARGET_STANDARD = 130;
@@ -14,6 +14,7 @@ export class Herd {
     this.world = world;
     this.cows = [];
     this._respawnT = 0;
+    preloadCows();
     this._seed();
   }
 

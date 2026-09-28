@@ -1,0 +1,82 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>cow viewer</title>
+<style>body{margin:0;background:#9fb8c8}canvas{display:block}</style></head>
+<body>
+<script type="module">
+// Dev tool: renders a skinned cow/bull as a filmstrip. Query:
+//   ?model=cow&look=holstein&kind=standard&state=move&speed=4&frames=6&variant=0
+// state=move captures one stride; graze/struggle/stomp capture a time span.
+import * as THREE from 'three';
+import { loadCattle, SkinnedCowRig } from '/src/entities/cowModel.js';
+
+const q = new URLSearchParams(location.search);
+const model = q.get('model') || 'cow';
+const look = q.get('look') || 'holstein';
+const kind = q.get('kind') || 'standard';
+const state = q.get('state') || 'move';
+const speed = parseFloat(q.get('speed') || '4');
+const variant = parseInt(q.get('variant') || '0');
+const FR = parseInt(q.get('frames') || '6'), W = parseInt(q.get('w') || '250'), H = 400;
+const view = q.get('view') || 'side';
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(W * FR, H);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x9fb8c8);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x667755, 1.1));
+const sun = new THREE.DirectionalLight(0xffffff, 1.8); sun.position.set(3, 5, 2); scene.add(sun);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), new THREE.MeshStandardMaterial({ color: 0x6a9a4a }));
+ground.rotation.x = -Math.PI / 2; scene.add(ground);
+const camera = new THREE.PerspectiveCamera(30, W / H, 0.1, 50);
+if (view === 'front') camera.position.set(0.1, 1.1, 7.5);
+else if (view === 'three') camera.position.set(5.5, 2.2, 5.0);
+else camera.position.set(7.5, 1.1, 0.1);
+camera.lookAt(0, 0.8, 0.1);
+
+const template = await loadCattle(model);
+const rig = new SkinnedCowRig(template, kind, model, 1, look, variant);
+scene.add(rig.group);
+
+const dt = 1 / 120;
+let t = 0;
+const bones = {}; rig.model.traverse((o) => { if (o.isBone) bones[o.name] = o; });
+const segAngle = (a, b) => {
+  const pa = new THREE.Vector3(), pb = new THREE.Vector3();
+  bones[a].getWorldPosition(pa); bones[b].getWorldPosition(pb);
+  return Math.round(THREE.MathUtils.radToDeg(Math.atan2(pb.z - pa.z, -(pb.y - pa.y))));
+};
+const angles = [];
+renderer.setScissorTest(true);
+const snap = (i) => {
+  renderer.setViewport(i * W, 0, W, H); renderer.setScissor(i * W, 0, W, H);
+  renderer.render(scene, camera);
+  rig.model.updateMatrixWorld(true);
+  const c = template.frontChain.L;
+  angles.push({ forearm: segAngle(c[1], c[2]), cannon: segAngle(c[2], c[3]), neck: segAngle('chest', 'skull') - 90 });
+};
+for (let i = 0; i < 120 * 4; i++) { rig.animate(dt, state, speed, 0.7, t); t += dt; }
+if (state === 'move') {
+  const startPhase = Math.floor(rig.engine.phase) + 1;
+  let captured = 0, lastBin = -1;
+  while (captured < FR) {
+    rig.animate(dt, state, speed, 0, t); t += dt;
+    const ph = rig.engine.phase;
+    if (ph < startPhase) continue;
+    const bin = Math.floor((ph - startPhase) * FR);
+    if (bin !== lastBin && bin === captured) { snap(captured); captured++; lastBin = bin; }
+    if (ph - startPhase > 2) break;
+  }
+} else {
+  const span = state === 'graze' ? 6 : 1.2;
+  for (let i = 0; i < FR; i++) {
+    const until = t + span / FR;
+    while (t < until) { rig.animate(dt, state, 0, 0.7, t); t += dt; }
+    snap(i);
+  }
+}
+window.__done = { w: { ...rig.engine.w }, angles };
+window.__rig = rig; window.__THREE = THREE;
+document.title = 'done';
+</script></body></html>

@@ -118,10 +118,22 @@ Monte Carlo (2M draws per cow type ⇒ 0.952–0.962 across every type/strategy)
   dapples, pinto patches, leopard spots, roan, dorsal stripes, mane/tail and
   saddle leather — so no texture is required (a hide texture can be layered
   in later via the preserved UVs).
-- **Three.js, no external assets** for everything else. Rider and cows are
-  procedurally built, many-jointed rigs (neck/head/jaw/ears/tails, 2-joint
-  cow legs, articulated rider) with code-driven idle/walk/gallop, graze,
-  struggle, and stomp cycles. Cow hides are procedural canvas textures.
+- **Rigged cattle.** Cows and bulls are two rigged models (`cow.glb`,
+  `bull.glb`, same skeleton naming as the horses) driven by the same gait
+  engine with a bovine profile: shorter flatter strides, a low level head,
+  little knee action, a stiff back and a rocking gallop where the hind feet
+  land almost together. On top of the gaits: grazing (neck and poll drop to
+  the grass, chewing), the lassoed struggle (head shaking, legs bracing and
+  stamping) and the Crash Bull's stomp (head down, horns tossing, a fore hoof
+  pawing). Hides are painted into vertex colours — Holstein patches (with
+  mostly-white and mostly-black variants), brown and Hereford white-face,
+  black Angus, plus the glowing mystery / offer / crash looks — and the
+  painted hides are shared between cows of the same look, with vertex buffers
+  shared with the template, so a 156-head herd costs one skinned draw per cow.
+  The loader also fixes a rig quirk: the cow's belly was skinned to its head
+  bone, so those vertices are handed back to the chest and pelvis by position.
+- **Three.js, no external assets** for everything else. The rider is a
+  procedurally built, articulated rig with code-driven arm poses and posting.
 - **Seeded world gen.** Each session rolls a new seed: rolling value-noise
   terrain, patchy colouring, trees/rocks/bushes, perimeter fence that follows
   the terrain, drifting clouds, and a grass carpet that re-lays itself around
@@ -145,7 +157,8 @@ src/
   world/world.js       seeded terrain, fence, decor, sky, grass, clouds
   entities/horse.js    procedural rider + virtual horse joints, gaits, jumps, player movement
   entities/horseModel.js  GLB breed loader, coat painter, skeleton retargeting
-  entities/cow.js      cow rig, variants, flee/herd AI
+  entities/cow.js      cow entity, variants, flee/herd AI (+ placeholder rig)
+  entities/cowModel.js rigged cattle: bovine gait profile, hides, graze/struggle/stomp
   entities/herd.js     spawning & population upkeep
   entities/bots.js     rival cowboys (simulated multiplayer)
   lasso/lasso.js       verlet rope + dynamic loop
@@ -153,6 +166,6 @@ src/
   ui/ui.js             menu, stable storefront, HUD, toasts, rider popups
   ui/minimap.js        radar minimap
   core/                rng & noise, loft geometry, particles, WebAudio sfx
-public/models/         compressed breed GLBs (built from models-src/*.fbx)
-tools/                 model pipeline (FBX → GLB) and icon generator
+public/models/         compressed horse + cattle GLBs (built from models-src/*.fbx)
+tools/                 model pipeline (FBX → GLB), rig inspector, gait/cow filmstrip viewers, icon generator
 ```

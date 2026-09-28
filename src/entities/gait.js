@@ -93,7 +93,8 @@ export class GaitEngine {
     const moving = 1 - W.idle;
 
     // ---- blended gait parameters ----
-    const g = [GAITS.walk, midGait, GAITS.gallop];
+    // a profile may swap in its own footfall timing (cattle hop the hinds)
+    const g = [p.walk || GAITS.walk, p.mid || midGait, p.gallop || GAITS.gallop];
     const gw = [W.walk, W.mid, W.gallop];
     const norm = Math.max(1e-4, gw[0] + gw[1] + gw[2]);
     const wn = gw.map((x) => x / norm);

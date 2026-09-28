@@ -1,0 +1,77 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>rig inspector</title>
+<style>body{margin:0;background:#9fb8c8}canvas{display:block}</style>
+<script type="importmap">
+{ "imports": { "three": "/node_modules/three/build/three.module.js",
+               "three/addons/": "/node_modules/three/examples/jsm/" } }
+</script></head><body><script type="module">
+// Dev tool: renders a GLB from public/models in bind pose (side + front +
+// top) and dumps its bone tree with world positions, skin weight sums and
+// vertex spans. Query: ?m=cow
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+const name = new URLSearchParams(location.search).get('m') || 'cow';
+const W = 500, H = 400;
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(W * 3, H);
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x9fb8c8);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x667755, 1.1));
+const sun = new THREE.DirectionalLight(0xffffff, 1.6); sun.position.set(3, 5, 2); scene.add(sun);
+const loader = new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder);
+loader.load(`/public/models/${name}.glb`, (g) => {
+  g.scene.updateMatrixWorld(true);
+  let mesh; g.scene.traverse((o) => { if (o.isSkinnedMesh) mesh = o; });
+  mesh.material = new THREE.MeshStandardMaterial({ color: 0xc8b8a0, roughness: 0.8 });
+  scene.add(g.scene);
+  const geo = mesh.geometry, si = geo.attributes.skinIndex, sw = geo.attributes.skinWeight;
+  const names = mesh.skeleton.bones.map((b) => b.name);
+  const total = {}, dominant = {}, mn = {}, mx = {};
+  const v = new THREE.Vector3();
+  const bb = new THREE.Box3();
+  for (let i = 0; i < si.count; i++) {
+    mesh.getVertexPosition(i, v).applyMatrix4(mesh.matrixWorld);
+    bb.expandByPoint(v);
+    let best = -1, bw = 0;
+    for (let j = 0; j < 4; j++) {
+      const n = names[si.getComponent(i, j)], w = sw.getComponent(i, j);
+      if (w <= 0) continue;
+      total[n] = (total[n] || 0) + w;
+      if (w > bw) { bw = w; best = n; }
+    }
+    if (best !== -1) {
+      dominant[best] = (dominant[best] || 0) + 1;
+      if (!mn[best]) { mn[best] = v.clone(); mx[best] = v.clone(); } else { mn[best].min(v); mx[best].max(v); }
+    }
+  }
+  const tree = [];
+  const walk = (b, depth) => {
+    const p = new THREE.Vector3(); b.getWorldPosition(p);
+    const f = (x) => +x.toFixed(3);
+    tree.push({
+      name: b.name, depth, pos: [f(p.x), f(p.y), f(p.z)],
+      w: +(total[b.name] || 0).toFixed(1), dom: dominant[b.name] || 0,
+      span: mn[b.name] ? [[f(mn[b.name].x), f(mn[b.name].y), f(mn[b.name].z)], [f(mx[b.name].x), f(mx[b.name].y), f(mx[b.name].z)]] : null,
+    });
+    for (const c of b.children) if (c.isBone) walk(c, depth + 1);
+  };
+  const roots = mesh.skeleton.bones.filter((b) => !b.parent || !b.parent.isBone);
+  for (const r of roots) walk(r, 0);
+  // render side / front / top
+  const c = bb.getCenter(new THREE.Vector3()), s = bb.getSize(new THREE.Vector3());
+  const R = Math.max(s.x, s.y, s.z) * 1.1;
+  const cam = new THREE.PerspectiveCamera(30, W / H, 0.01, 100);
+  renderer.setScissorTest(true);
+  const views = [[R * 3.8, 0, 0], [0, 0, R * 3.8], [0, R * 3.8, 0.001]];
+  views.forEach((pos, i) => {
+    cam.position.set(c.x + pos[0], c.y + pos[1], c.z + pos[2]); cam.lookAt(c);
+    renderer.setViewport(i * W, 0, W, H); renderer.setScissor(i * W, 0, W, H);
+    renderer.render(scene, cam);
+  });
+  window.__mesh = mesh; window.__THREE = THREE;
+  window.__out = { verts: si.count, uv: !!geo.attributes.uv, bbox: [bb.min.toArray().map((x) => +x.toFixed(3)), bb.max.toArray().map((x) => +x.toFixed(3))], tree };
+  document.title = 'done';
+});
+</script></body></html>

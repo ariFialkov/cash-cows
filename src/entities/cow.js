@@ -1,14 +1,40 @@
-// Many-jointed cow rig (neck/head/jaw/ears/tail x2/4 legs x2 joints + hooves)
-// with procedural spot textures, plus special variants:
+// Cows: the herd's AI (graze / wander / herd-flee with fence awareness —
+// corner them!) and the cow entity. Cattle wear the rigged cow / bull models
+// (cowModel.js) driven by the shared gait engine; the procedural CowRig below
+// is only the placeholder shown until those models have loaded.
+// Special variants:
 //   mystery — identical size, starfield-purple glow, hidden multiplier
 //   offer   — golden glow, take-it-or-leave-it deal on lasso
 //   crash   — the Crash Bull: hulking, black, red-eyed mini crash game
-// AI: graze / wander / herd-flee with fence awareness (corner them!).
 
 import * as THREE from 'three';
 import { PEN_HALF } from '../world/world.js';
 import { loft, loftUp, loftDown } from '../core/loft.js';
 import { multiplierForSize, drawMysteryMultiplier, drawStandardSize } from '../game/economy.js';
+import { preloadCattle, SkinnedCowRig } from './cowModel.js';
+
+// Rigged cattle models load once; cows built before they arrive start on the
+// procedural rig below and swap onto the real model on their next update.
+let cattle = null;
+let cattleLoading = null;
+export function preloadCows() {
+  if (!cattleLoading) {
+    cattleLoading = preloadCattle().then(([cow, bull]) => { cattle = { cow, bull }; }).catch((e) => console.warn('cattle models failed to load', e));
+  }
+  return cattleLoading;
+}
+
+// which model + hide a cow wears
+function pickLook(kind, size) {
+  if (kind === 'mystery') return { model: 'cow', look: 'mystery' };
+  if (kind === 'offer') return { model: 'cow', look: 'offer' };
+  if (kind === 'crash') return { model: 'bull', look: 'crash' };
+  const r = Math.random();
+  const look = r < 0.45 ? 'holstein' : r < 0.82 ? 'brown' : 'angus';
+  // the biggest standard cows are sometimes steers on the bull model
+  const model = size > 2.2 && Math.random() < 0.5 ? 'bull' : 'cow';
+  return { model, look };
+}
 
 const texCache = new Map();
 function spotTexture(bgHex, spotHex, key) {
@@ -303,7 +329,16 @@ export class Cow {
       this.mult = multiplierForSize(this.size);
     }
 
-    this.rig = new CowRig(kind, this.size);
+    this.scene = scene;
+    this.dress = pickLook(kind, this.size);
+    this.dress.variant = (Math.random() * 3) | 0;
+    if (cattle) {
+      this.rig = new SkinnedCowRig(cattle[this.dress.model], kind, this.dress.model, this.size, this.dress.look, this.dress.variant);
+    } else {
+      this.rig = new CowRig(kind, this.size);
+      this._pendingSkin = true;
+      preloadCows();
+    }
     this.obj = this.rig.group;
     scene.add(this.obj);
 
@@ -323,8 +358,19 @@ export class Cow {
     scene.remove(this.obj);
   }
 
+  // swap the placeholder rig for the rigged model once it has loaded
+  _swapRig() {
+    this._pendingSkin = false;
+    this.scene.remove(this.obj);
+    this.rig = new SkinnedCowRig(cattle[this.dress.model], this.kind, this.dress.model, this.size, this.dress.look, this.dress.variant);
+    this.obj = this.rig.group;
+    this.scene.add(this.obj);
+    this._settle(0);
+  }
+
   update(dt, player, cows, time, riders = []) {
     const FLEE_R = 20, CALM_R = 26;
+    if (this._pendingSkin && cattle) this._swapRig();
     const toPlayer = this.pos.distanceTo(player.pos);
 
     // flee from whichever rider (player or bot) is closest

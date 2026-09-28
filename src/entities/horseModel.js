@@ -21,25 +21,33 @@ import { GaitEngine } from './gait.js';
 
 const cache = new Map();
 
-export function loadHorseType(type) {
-  if (cache.has(type)) return cache.get(type);
+// Generic rigged-quadruped template loader (horses and cattle share the same
+// 27-bone skeleton naming). `height` is the model's world height in metres;
+// opts.fixTorso re-skins stray torso vertices off the head bone.
+export function loadRigTemplate(model, height, opts = {}) {
+  if (cache.has(model)) return cache.get(model);
   const p = new Promise((resolve, reject) => {
     const loader = new GLTFLoader();
     loader.setMeshoptDecoder(MeshoptDecoder);
-    loader.load(`${import.meta.env.BASE_URL}models/${HORSE_TYPES[type].model}.glb`,
-      (g) => resolve(prepareTemplate(g.scene, type)), undefined, reject);
+    loader.load(`${import.meta.env.BASE_URL}models/${model}.glb`,
+      (g) => resolve(prepareTemplate(g.scene, height, opts)), undefined, reject);
   });
-  cache.set(type, p);
+  cache.set(model, p);
   return p;
+}
+
+export function loadHorseType(type) {
+  return loadRigTemplate(HORSE_TYPES[type].model, HORSE_TYPES[type].height);
 }
 
 const WX = new THREE.Vector3(1, 0, 0), WY = new THREE.Vector3(0, 1, 0), WZ = new THREE.Vector3(0, 0, 1);
 
-function prepareTemplate(scene, type) {
+function prepareTemplate(scene, height, opts) {
   scene.updateMatrixWorld(true);
   let mesh = null;
   scene.traverse((o) => { if (o.isSkinnedMesh) mesh = o; });
 
+  if (opts.fixTorso) fixTorsoWeights(mesh);
   // some breeds' front legs are rigged shoulder→elbow→fetlock→pastern with no
   // carpus; give them a knee so the cannon can fold
   const frontChain = ensureFrontKnees(mesh);
@@ -56,13 +64,15 @@ function prepareTemplate(scene, type) {
   const min = new THREE.Vector3(Infinity, Infinity, Infinity);
   const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
   const world = new Array(pos.count);
+  const muzzle = new THREE.Vector3(0, 0, -Infinity); // most forward point (the nose)
   for (let i = 0; i < pos.count; i++) {
     mesh.getVertexPosition(i, v).applyMatrix4(mesh.matrixWorld);
     min.min(v); max.max(v);
     world[i] = v.clone();
+    if (v.z > muzzle.z && Math.abs(v.x) < 0.02) muzzle.copy(v); // near the centre line (not a horn tip)
   }
   const size = max.clone().sub(min);
-  const S = HORSE_TYPES[type].height / size.y;
+  const S = height / size.y;
 
   // per-bone bind data: rest local quaternion + world axes expressed locally
   const boneData = new Map();
@@ -96,7 +106,59 @@ function prepareTemplate(scene, type) {
   scene.getObjectByName('frontleg').getWorldPosition(sh);
   const legLen = (sh.y - min.y) * S;
 
-  return { scene, type, S, boneData, seat, size, mesh, groundY, legLen, frontChain };
+  return { scene, S, boneData, seat, size, mesh, groundY, legLen, frontChain, min, max, muzzle };
+}
+
+// ---------------------------------------------------------------------------
+// Torso weight fix-up. Some rigs (the cattle) have barrel/belly vertices
+// skinned to the head bone; hand those behind the neck base to the chest or
+// pelvis by position so the body doesn't swing when the head moves.
+
+function fixTorsoWeights(mesh) {
+  const skel = mesh.skeleton;
+  const names = skel.bones.map((b) => b.name);
+  const idx = (n) => names.indexOf(n);
+  const headI = idx('head'), chestI = idx('chest'), hipsI = idx('Hips');
+  if (headI < 0 || chestI < 0 || hipsI < 0) return;
+  const wp = (i) => { const p = new THREE.Vector3(); skel.bones[i].getWorldPosition(p); return p; };
+  const chestZ = wp(chestI).z, hipsZ = wp(hipsI).z, headZ = wp(headI).z;
+  const cut = chestZ + (headZ - chestZ) * 0.35;  // behind here is torso, not neck
+  const band = (headZ - chestZ) * 0.2;
+  const mid = (chestZ + hipsZ) / 2;
+  const geo = mesh.geometry;
+  const si = geo.attributes.skinIndex, sw = geo.attributes.skinWeight;
+  const vtx = new THREE.Vector3();
+  mesh.updateMatrixWorld(true);
+  for (let i = 0; i < si.count; i++) {
+    let slot = -1;
+    for (let j = 0; j < 4; j++) if (si.getComponent(i, j) === headI && sw.getComponent(i, j) > 0) slot = j;
+    if (slot < 0) continue;
+    mesh.getVertexPosition(i, vtx).applyMatrix4(mesh.matrixWorld);
+    if (vtx.z >= cut + band) continue;
+    const f = vtx.z <= cut - band ? 1 : (cut + band - vtx.z) / (2 * band); // fraction moved off the head
+    const target = vtx.z > mid ? chestI : hipsI;
+    const w = sw.getComponent(i, slot);
+    // merge into an existing slot of the target bone if there is one
+    let tslot = -1, free = -1;
+    for (let j = 0; j < 4; j++) {
+      if (si.getComponent(i, j) === target && sw.getComponent(i, j) > 0) tslot = j;
+      if (sw.getComponent(i, j) === 0 && free < 0) free = j;
+    }
+    if (f >= 1) {
+      if (tslot >= 0) { sw.setComponent(i, tslot, sw.getComponent(i, tslot) + w); sw.setComponent(i, slot, 0); }
+      else si.setComponent(i, slot, target);
+    } else if (tslot >= 0) {
+      sw.setComponent(i, tslot, sw.getComponent(i, tslot) + w * f);
+      sw.setComponent(i, slot, w * (1 - f));
+    } else if (free >= 0) {
+      si.setComponent(i, free, target); sw.setComponent(i, free, w * f);
+      sw.setComponent(i, slot, w * (1 - f));
+    } else if (f > 0.5) {
+      si.setComponent(i, slot, target);
+    }
+  }
+  si.needsUpdate = true;
+  sw.needsUpdate = true;
 }
 
 // ---------------------------------------------------------------------------
@@ -377,6 +439,79 @@ export function paintCoat(mesh, coat, seedIn = 7) {
 const _q = new THREE.Quaternion();
 const _q2 = new THREE.Quaternion();
 
+// Shared skeleton driving for anything built on a rig template. `rig` needs
+// { template, model, bones }.
+export function setBoneRot(rig, name, rx, ry, rz) {
+  const b = rig.bones[name];
+  const d = rig.template.boneData.get(name);
+  if (!b || !d) return;
+  b.quaternion.copy(d.rest);
+  if (rx) b.quaternion.multiply(_q.setFromAxisAngle(d.ax, rx));
+  if (rz) b.quaternion.multiply(_q2.setFromAxisAngle(d.az, rz));
+  if (ry) b.quaternion.multiply(_q.setFromAxisAngle(d.ay, ry));
+}
+
+// Clone a template's scene into a drivable model: returns { model, bones,
+// mesh, modelBaseY }. The mesh gets its own geometry object so per-instance
+// vertex colours can be attached; with `share` the vertex buffers themselves
+// stay shared with the template (cheap for big herds).
+export function instantiateRig(template, share = false) {
+  const model = SkeletonUtils.clone(template.scene);
+  model.scale.setScalar(template.S);
+  const bones = {};
+  let mesh = null;
+  model.traverse((o) => { if (o.isBone) bones[o.name] = o; });
+  model.traverse((o) => {
+    if (!o.isSkinnedMesh) return;
+    if (share) {
+      const src = o.geometry, g = new THREE.BufferGeometry();
+      g.setIndex(src.index);
+      for (const name in src.attributes) g.setAttribute(name, src.attributes[name]);
+      g.boundingBox = src.boundingBox; g.boundingSphere = src.boundingSphere;
+      o.geometry = g;
+    } else {
+      o.geometry = o.geometry.clone();
+    }
+    o.castShadow = true;
+    o.frustumCulled = false;
+    mesh = o;
+  });
+  return { model, bones, mesh, modelBaseY: -template.groundY * template.S };
+}
+
+// Push a gait-engine pose onto the skeleton. `roll` is the body roll about
+// the forward axis; bodyY the bob offset in metres.
+export function applyPose(rig, pose, bodyY, roll) {
+  rig.model.position.y = rig.modelBaseY + bodyY;
+  setBoneRot(rig, 'Hips', pose.pitch, 0, roll);
+  setBoneRot(rig, 'chest', pose.chestFlex, 0, 0);
+
+  const chains = [rig.template.frontChain.L, rig.template.frontChain.R];
+  for (let i = 0; i < 2; i++) {
+    const L = pose.legs[i], c = chains[i];
+    setBoneRot(rig, c[0], L.a, 0, 0);            // shoulder
+    setBoneRot(rig, c[1], L.b, 0, 0);            // elbow
+    setBoneRot(rig, c[2], L.c, 0, 0);            // knee (carpus)
+    setBoneRot(rig, c[3], L.d, 0, 0);            // fetlock
+    if (c[4]) setBoneRot(rig, c[4], L.d * 0.5, 0, 0); // pastern carries on the flex
+  }
+  const hinds = ['backleg', 'R_backleg'];
+  for (let i = 2; i < 4; i++) {
+    const L = pose.legs[i], p = hinds[i - 2];
+    setBoneRot(rig, p, L.a, 0, 0);          // hip
+    setBoneRot(rig, p + '0', L.b, 0, 0);    // stifle
+    setBoneRot(rig, p + '1', L.c, 0, 0);    // hock
+    setBoneRot(rig, p + '2', L.d, 0, 0);    // fetlock
+  }
+
+  setBoneRot(rig, 'head', pose.neck + pose.headX * 0.7, pose.headYaw, 0);
+  setBoneRot(rig, 'skull', pose.head, pose.headYaw * 0.5, 0);
+  setBoneRot(rig, 'earend', 0, 0, pose.ears[0]);
+  setBoneRot(rig, 'R_earend', 0, 0, pose.ears[1]);
+  const tailNames = ['tail', 'tailstart', 'tail1', 'tail2', 'tail3'];
+  for (let i = 0; i < 5; i++) setBoneRot(rig, tailNames[i], pose.tail[i].x, 0, pose.tail[i].z);
+}
+
 export class SkinnedHorseRider extends HorseRider {
   constructor(template, species, cowboyIdx = 0) {
     super({ virtual: true });
@@ -386,25 +521,17 @@ export class SkinnedHorseRider extends HorseRider {
     this.engine = new GaitEngine(HORSE_TYPES[species.type].gait, template.legLen);
     this.pose = null;
 
-    this.model = SkeletonUtils.clone(template.scene);
-    this.model.scale.setScalar(S);
-    this.modelBaseY = -template.groundY * S; // hooves on the ground
+    const inst = instantiateRig(template);
+    this.model = inst.model;
+    this.bones = inst.bones;
+    this.mesh = inst.mesh;
+    this.modelBaseY = inst.modelBaseY; // hooves on the ground
     this.group.add(this.model);
-
-    this.bones = {};
-    this.model.traverse((o) => { if (o.isBone) this.bones[o.name] = o; });
-    this.model.traverse((o) => {
-      if (!o.isSkinnedMesh) return;
-      o.geometry = o.geometry.clone();
-      paintCoat(o, species.coat, species.id.length * 13);
-      o.material = new THREE.MeshStandardMaterial({
-        vertexColors: true,
-        roughness: species.coat.metal ? 0.38 : species.coat.pattern === 'sheen' ? 0.55 : 0.85,
-        metalness: species.coat.metal ? 0.55 : 0,
-      });
-      o.castShadow = true;
-      o.frustumCulled = false;
-      this.mesh = o;
+    paintCoat(this.mesh, species.coat, species.id.length * 13);
+    this.mesh.material = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: species.coat.metal ? 0.38 : species.coat.pattern === 'sheen' ? 0.55 : 0.85,
+      metalness: species.coat.metal ? 0.55 : 0,
     });
 
     // rider mounts on an anchor riding the chest bone at the saddle seat
@@ -431,15 +558,7 @@ export class SkinnedHorseRider extends HorseRider {
     this.mats.shirt.color.setHex(cb.shirt);
   }
 
-  _setRot(name, rx, ry, rz) {
-    const b = this.bones[name];
-    const d = this.template.boneData.get(name);
-    if (!b || !d) return;
-    b.quaternion.copy(d.rest);
-    if (rx) b.quaternion.multiply(_q.setFromAxisAngle(d.ax, rx));
-    if (rz) b.quaternion.multiply(_q2.setFromAxisAngle(d.az, rz));
-    if (ry) b.quaternion.multiply(_q.setFromAxisAngle(d.ay, ry));
-  }
+  _setRot(name, rx, ry, rz) { setBoneRot(this, name, rx, ry, rz); }
 
   // The gait engine produces the horse pose; the virtual body carries the
   // bob/roll the rider and jump logic read; postPose() pushes it to bones.
@@ -484,35 +603,7 @@ export class SkinnedHorseRider extends HorseRider {
 
   // push the pose onto the skeleton
   postPose() {
-    const pose = this.pose;
-    if (!pose) return;
-    this.model.position.y = this.modelBaseY + (this.body.position.y - 1.06);
-    this._setRot('Hips', pose.pitch, 0, this.body.rotation.z);
-    this._setRot('chest', pose.chestFlex, 0, 0);
-
-    const chains = [this.template.frontChain.L, this.template.frontChain.R];
-    for (let i = 0; i < 2; i++) {
-      const L = pose.legs[i], c = chains[i];
-      this._setRot(c[0], L.a, 0, 0);            // shoulder
-      this._setRot(c[1], L.b, 0, 0);            // elbow
-      this._setRot(c[2], L.c, 0, 0);            // knee (carpus)
-      this._setRot(c[3], L.d, 0, 0);            // fetlock
-      if (c[4]) this._setRot(c[4], L.d * 0.5, 0, 0); // pastern carries on the flex
-    }
-    const hinds = ['backleg', 'R_backleg'];
-    for (let i = 2; i < 4; i++) {
-      const L = pose.legs[i], p = hinds[i - 2];
-      this._setRot(p, L.a, 0, 0);          // hip
-      this._setRot(p + '0', L.b, 0, 0);    // stifle
-      this._setRot(p + '1', L.c, 0, 0);    // hock
-      this._setRot(p + '2', L.d, 0, 0);    // fetlock
-    }
-
-    this._setRot('head', pose.neck + pose.headX * 0.7, pose.headYaw, 0);
-    this._setRot('skull', pose.head, pose.headYaw * 0.5, 0);
-    this._setRot('earend', 0, 0, pose.ears[0]);
-    this._setRot('R_earend', 0, 0, pose.ears[1]);
-    const tailNames = ['tail', 'tailstart', 'tail1', 'tail2', 'tail3'];
-    for (let i = 0; i < 5; i++) this._setRot(tailNames[i], pose.tail[i].x, 0, pose.tail[i].z);
+    if (!this.pose) return;
+    applyPose(this, this.pose, this.body.position.y - 1.06, this.body.rotation.z);
   }
 }
