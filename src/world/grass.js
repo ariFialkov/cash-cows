@@ -117,6 +117,8 @@ export class Grass {
       // Lambert: the cheapest lit material, since thousands of thin blades overdraw
       const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
       const uniforms = { uTime: { value: 0 }, uBladeH: { value: geo.userData.height }, uPlayer: { value: new THREE.Vector3() } };
+      // each layer bakes its own fade distances into the shader: keep their programs apart
+      mat.customProgramCacheKey = () => `grass-${L}`;
       mat.onBeforeCompile = (shader) => {
         Object.assign(shader.uniforms, uniforms);
         shader.vertexShader = `

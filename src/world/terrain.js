@@ -434,6 +434,9 @@ export class Terrain {
 
     const mkMat = (far) => {
       const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, metalness: 0 });
+      // the two materials differ only inside the closure, so key their programs
+      // apart or three would compile one shader and hand it to both meshes
+      mat.customProgramCacheKey = () => (far ? 'terrain-far' : 'terrain-near');
       mat.onBeforeCompile = (shader) => {
         Object.assign(shader.uniforms, this.uniforms);
         shader.vertexShader = `
