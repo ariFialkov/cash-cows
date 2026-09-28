@@ -586,7 +586,49 @@ export class SkinnedHorseRider extends HorseRider {
     this.cowboy = cowboy;
     this.rider.visible = false;
     this.riderMount.add(cowboy.group);
+    this._buildReins();
     this.postPose();
+  }
+
+  // Reins: two thin leather lines from the cowboy's left hand to either side
+  // of the bit, rebuilt each frame as the hand and head move.
+  _buildReins() {
+    if (this.reins) return;
+    const t = this.template;
+    const skullT = t.scene.getObjectByName('skull') || t.scene.getObjectByName('head');
+    const skull = this.bones.skull || this.bones.head;
+    if (!skullT || !skull || !t.muzzle) return;
+    // bit anchors in the skull bone's local frame (template units), just
+    // behind and below the nose, either side of the mouth
+    const poll = skullT.getWorldPosition(new THREE.Vector3());
+    const inv = skullT.matrixWorld.clone().invert();
+    this.bits = [1, -1].map((s) => {
+      const a = new THREE.Object3D();
+      const w = poll.clone().lerp(t.muzzle, 0.82);
+      w.x += s * 0.055 / t.S; w.y -= 0.02 / t.S;
+      a.position.copy(w.applyMatrix4(inv));
+      skull.add(a);
+      return a;
+    });
+    const mat = new THREE.MeshStandardMaterial({ color: 0x3a2414, roughness: 0.85 });
+    this.reins = [0, 1].map(() => { const m = new THREE.Mesh(new THREE.BufferGeometry(), mat); m.frustumCulled = false; this.group.add(m); return m; });
+  }
+
+  _updateReins(run, tight) {
+    if (!this.reins) return;
+    const hand = _rh.copy(this.cowboy.bones.smartrigLeftHand.getWorldPosition(_rh));
+    this.group.worldToLocal(hand);
+    for (let i = 0; i < 2; i++) {
+      const bit = this.bits[i].getWorldPosition(_rb);
+      this.group.worldToLocal(bit);
+      const mid = _rm.copy(hand).lerp(bit, 0.5);
+      mid.y -= 0.06 + 0.1 * (1 - run) * (1 - tight);
+      mid.x += (i === 0 ? 1 : -1) * 0.02;
+      const curve = new THREE.CatmullRomCurve3([hand.clone(), mid.clone(), bit.clone()]);
+      const geo = new THREE.TubeGeometry(curve, 8, 0.008, 4, false);
+      this.reins[i].geometry.dispose();
+      this.reins[i].geometry = geo;
+    }
   }
 
   _animateRider(armPose, time, g) {
@@ -663,7 +705,8 @@ export class SkinnedHorseRider extends HorseRider {
         horse: this.pose, speed: this.engine.speedSm, turn: this.engine.leanSm,
         dt: this._riderDt, lassoAngle: this.lassoAngle ?? null, heading: this.group.rotation.y, look,
       });
+      this._updateReins(this.pose.run, this.cowboy._state.armPose === 'pull' ? 1 : 0);
     }
   }
 }
-const _look = new THREE.Vector3();
+const _look = new THREE.Vector3(), _rh = new THREE.Vector3(), _rb = new THREE.Vector3(), _rm = new THREE.Vector3();

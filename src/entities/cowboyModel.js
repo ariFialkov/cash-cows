@@ -198,6 +198,8 @@ export class SkinnedCowboy {
       lastY: null, vy: 0, ay: 0, lastSpeed: null, ax: 0,
       arm: 'rest', armT: 0, tugPhase: Math.random() * 6, headYaw: 0, headPitch: 0,
       seed: Math.random() * 100,
+      // lower legs: loose masses hanging off the knees (swing fore-aft, flap in/out)
+      legs: [{ sw: 0, swV: 0, lat: 0, latV: 0 }, { sw: 0, swV: 0, lat: 0, latV: 0 }],
     };
     this.q = new Map(); // per-bone current world-frame rotation (smoothed)
     this.pose({ lean: 0.08, roll: 0, lift: 0, horse: null, speed: 0, turn: 0, dt: 1 / 60, lassoAngle: null, heading: 0, look: null });
@@ -312,12 +314,25 @@ export class SkinnedCowboy {
     set('Head', seq(X, -pitch * 0.4 + D.headPitch * 0.65 + run * 0.06, Y, D.headYaw * 0.6, Z, -roll * 0.5 - D.headYaw * 0.06), 30);
 
     // ---- legs: absorb the bob, brace on a pull, half-seat at the gallop ----
+    // The lower legs are loosely hung: under-damped springs driven by the
+    // saddle's vertical acceleration, so every gallop landing throws the
+    // shins back and out and they swing forward and slap in against the
+    // horse's sides, fading at the trot and gone at the walk.
     const absorb = -D.seat * 4 + gallopW * 0.08 * Math.cos(P - 0.4);
     const brace = tug * 0.25;
-    for (const [side, s] of [['Left', 1], ['Right', -1]]) {
-      set(side + 'UpLeg', seq(X, -1.25 + pitch * 0.25 - absorb * 0.35 + brace * 0.2, Z, s * (0.42 + absorb * 0.1)), 30);
-      set(side + 'Leg', seq(X, 1.35 + absorb * 0.9 - brace * 0.5), 30);
-      set(side + 'Foot', seq(X, 0.15 + absorb * 0.4 + brace * 0.3), 30);
+    const flop = (gallopW + trotW * 0.3) * (1 - brace);
+    for (const [i, side, s] of [[0, 'Left', 1], [1, 'Right', -1]]) {
+      const L = D.legs[i];
+      const drive = D.ay * flop * (1 + n(4 + i) * 0.2);
+      for (let k = 0; k < 2; k++) {
+        L.swV += (-70 * L.sw - 6.5 * L.swV - drive * 0.055) * h; L.sw += L.swV * h;
+        L.latV += (-95 * L.lat - 7.5 * L.latV + drive * 0.04) * h; L.lat += L.latV * h;
+      }
+      L.sw = THREE.MathUtils.clamp(L.sw, -0.4, 0.4);
+      L.lat = THREE.MathUtils.clamp(L.lat, -0.12, 0.3);
+      set(side + 'UpLeg', seq(X, -1.25 + pitch * 0.25 - absorb * 0.35 + brace * 0.2 + L.sw * 0.25, Z, s * (0.42 + absorb * 0.1 + L.lat)), 30);
+      set(side + 'Leg', seq(X, 1.35 + absorb * 0.9 - brace * 0.5 + L.sw, Z, s * L.lat * 0.5), 30);
+      set(side + 'Foot', seq(X, 0.15 + absorb * 0.4 + brace * 0.3 + L.sw * 0.7 + L.swV * 0.02), 30);
       set(side + 'ToeBase', seq(X, 0), 30);
     }
 
