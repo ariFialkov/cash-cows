@@ -159,9 +159,16 @@ Monte Carlo (2M draws per cow type ⇒ 0.952–0.962 across every type/strategy)
   the player. The pen is a 520 m × 520 m free-range enclosure — big enough to
   feel open, bounded so that cornering cows against the fence stays part of
   the game.
-- The rope is a per-frame rebuilt CatmullRom tube: overhead spin at idle, a
-  ballistic arc with trailing line on throw, and a taut, jittering line with a
-  cinched loop during a wrangle.
+- The rope is a per-frame rebuilt CatmullRom tube (80 segments, 8 sides)
+  over a 26-particle verlet rope with bending constraints, so it curves
+  instead of kinking: overhead spin at idle, a ballistic arc with trailing
+  line on throw, and a taut, sagging line with a cinched loop during a
+  wrangle. The loop is a 28-point ring deformed by centrifugal lag, gravity
+  sag on the side away from the spoke and noise-driven flutter sampled on a
+  circle, with a torus-knot honda. Ropes wear a procedural three-strand
+  twisted texture (colour + bump, one lay per 12 cm of rope, UVs rescaled per
+  frame); the lasso tier shows as a coloured tracer strand and a faint tint
+  rather than a solid colour.
 - Sound effects are synthesized with WebAudio — no audio files.
 - `window.__cc` exposes a small debug handle used by the Playwright smoke
   tests.

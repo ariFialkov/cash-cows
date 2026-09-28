@@ -8,12 +8,30 @@
 // honda knot where the rope ties in.
 
 import * as THREE from 'three';
+import { ropeTextures } from './ropeTexture.js';
+import { fbm2 } from '../core/rng.js';
 
-const ROPE_RADIUS = 0.028;
-const ROPE_SEGS = 36;
-const LOOP_PTS = 16;
-const LOOP_SEGS = 40;
-const ROPE_N = 12; // verlet particles
+const ROPE_RADIUS = 0.026;
+const ROPE_SEGS = 80;
+const ROPE_RADIAL = 8;
+const LOOP_PTS = 28;
+const LOOP_SEGS = 96;
+const ROPE_N = 26;      // verlet particles
+const LAY = 0.12;       // metres of rope per full twist of the lay (texture repeat)
+
+// scale a tube's U so the twist texture repeats once per LAY metres of rope;
+// closed tubes get a whole number of repeats so there is no seam
+function layUVs(geo, length, closed) {
+  const reps = closed ? Math.max(1, Math.round(length / LAY)) : length / LAY;
+  const uv = geo.attributes.uv;
+  for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * reps);
+}
+function curveLength(pts, closed) {
+  let L = 0;
+  for (let i = 0; i < pts.length - 1; i++) L += pts[i].distanceTo(pts[i + 1]);
+  if (closed) L += pts[pts.length - 1].distanceTo(pts[0]);
+  return L;
+}
 
 export class Lasso {
   constructor(scene, world = null) {
@@ -22,7 +40,8 @@ export class Lasso {
     this.state = 'idle'; // idle | aiming | flying | attached | snapping
     this.color = 0xb98a5a;
 
-    this.ropeMat = new THREE.MeshStandardMaterial({ color: this.color, roughness: 0.85 });
+    const tex = ropeTextures(this.color);
+    this.ropeMat = new THREE.MeshStandardMaterial({ map: tex.map, bumpMap: tex.bump, bumpScale: 0.006, roughness: 0.92 });
     this.rope = new THREE.Mesh(new THREE.BufferGeometry(), this.ropeMat);
     this.rope.castShadow = true;
     this.rope.frustumCulled = false;
@@ -35,7 +54,7 @@ export class Lasso {
     scene.add(this.loop);
 
     // honda knot at the rope/loop junction
-    this.honda = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), this.ropeMat);
+    this.honda = new THREE.Mesh(new THREE.TorusKnotGeometry(0.03, 0.017, 32, 6, 2, 3), this.ropeMat);
     this.honda.castShadow = true;
     scene.add(this.honda);
 
@@ -95,7 +114,10 @@ export class Lasso {
 
   setColor(hex) {
     this.color = hex;
-    this.ropeMat.color.setHex(hex);
+    const tex = ropeTextures(hex);
+    this.ropeMat.map = tex.map;
+    this.ropeMat.bumpMap = tex.bump;
+    this.ropeMat.needsUpdate = true;
   }
 
   // --- aiming preview -------------------------------------------------------
@@ -167,7 +189,7 @@ export class Lasso {
   }
 
   // radiusFn(theta) -> { r, lift }; hondaPhi: plane angle the rope ties in at
-  _buildLoop(center, radiusFn, hondaPhi) {
+  _buildLoop(center, radiusFn, hondaPhi, time_ = 0) {
     for (let i = 0; i < LOOP_PTS; i++) {
       const th = (i / LOOP_PTS) * Math.PI * 2;
       // pinch the ring toward the honda so the loop hangs off the knot
@@ -182,16 +204,26 @@ export class Lasso {
         .addScaledVector(this._e2, Math.sin(th) * rr)
         .addScaledVector(this._n, lift);
     }
-    const curve = new THREE.CatmullRomCurve3(this._loopPts, true, 'catmullrom', 0.65);
-    const geo = new THREE.TubeGeometry(curve, LOOP_SEGS, ROPE_RADIUS, 6, true);
+    const curve = new THREE.CatmullRomCurve3(this._loopPts, true, 'catmullrom', 0.6);
+    const geo = new THREE.TubeGeometry(curve, LOOP_SEGS, ROPE_RADIUS, ROPE_RADIAL, true);
+    layUVs(geo, curveLength(this._loopPts, true), true);
     this.loop.geometry.dispose();
     this.loop.geometry = geo;
+    this.honda.rotation.set(time_ * 2.1, time_ * 1.3, 0);
     // honda point on the ring
     this._hondaPt.copy(center)
       .addScaledVector(this._e1, Math.cos(hondaPhi) * radiusFn(hondaPhi).r * 0.86)
       .addScaledVector(this._e2, Math.sin(hondaPhi) * radiusFn(hondaPhi).r * 0.86);
     this.honda.position.copy(this._hondaPt);
     this.loopCenter.copy(center);
+  }
+
+  // organic ripple around the ring: two octaves of value noise travelling
+  // round the loop, instead of fixed sine harmonics
+  _ripple(th, time, seed, speed = 1) {
+    // sampled on a circle so the ring closes without a seam; the noise field
+    // drifts with time so the ripples travel and never repeat
+    return (fbm2(Math.cos(th) * 1.7 + time * 0.7 * speed, Math.sin(th) * 1.7 + seed * 3.1 + time * 0.23 * speed, seed * 7, 2) - 0.5) * 2;
   }
 
   _planeAngleTo(point, center) {
@@ -228,9 +260,9 @@ export class Lasso {
       const sa = this.spinAngle;
       this._buildLoop(p, (th) => ({
         // drag: the trailing edge of the loop lags and ripples
-        r: R * (1 + 0.05 * Math.sin(2 * th + sa * 2) + 0.07 * flut * Math.sin(3 * th - time * 18) + 0.04 * flut * Math.sin(5 * th + time * 23)),
-        lift: R * (-0.14 * flut * Math.cos(th - phiV) + 0.05 * flut * Math.sin(2 * th - time * 16)),
-      }), this._planeAngleTo(hand, p));
+        r: R * (1 + 0.05 * Math.sin(2 * th + sa * 2) + 0.09 * flut * this._ripple(th, time, 3, 2.2)),
+        lift: R * (-0.14 * flut * Math.cos(th - phiV) + 0.06 * flut * this._ripple(th, time, 5, 1.8)),
+      }), this._planeAngleTo(hand, p), time);
       this._ropeSim(dt, hand, this._hondaPt, { slack: 1.06, gravity: -9 });
       if (t >= 1) {
         const cb = this.onLand;
@@ -255,9 +287,9 @@ export class Lasso {
       const R = cow.size * 0.42;
       const jig = 0.4 + cow.struggleIntensity * 0.6;
       this._buildLoop(neck, (th) => ({
-        r: R * (1 + 0.05 * jig * Math.sin(3 * th + time * 9) + 0.035 * jig * Math.sin(5 * th - time * 12) + 0.02 * Math.sin(time * 11)),
-        lift: R * 0.08 * jig * Math.sin(2 * th + time * 8),
-      }), this._planeAngleTo(hand, neck));
+        r: R * (1 + 0.06 * jig * this._ripple(th, time, 11, 1.6) + 0.02 * Math.sin(time * 11)),
+        lift: R * 0.09 * jig * this._ripple(th, time, 13, 1.4),
+      }), this._planeAngleTo(hand, neck), time);
       // working rope: modest slack that tautens as the struggle intensifies
       this._ropeSim(dt, hand, this._hondaPt, {
         slack: 1.09 - 0.06 * Math.min(1, cow.struggleIntensity),
@@ -276,9 +308,9 @@ export class Lasso {
       const R = Math.max(0.18, this.loopRadius * (1 - k * 0.6));
       this._buildLoop(center, (th) => ({
         // crumple: high-frequency buckling as the tension lets go
-        r: R * (1 + 0.28 * k * Math.sin(4 * th + time * 30) + 0.18 * k * Math.sin(7 * th - time * 41)),
-        lift: R * 0.2 * k * Math.sin(3 * th + time * 26),
-      }), this._planeAngleTo(hand, center));
+        r: R * (1 + 0.3 * k * this._ripple(th, time, 17, 4) + 0.12 * k * Math.sin(7 * th - time * 41)),
+        lift: R * 0.22 * k * this._ripple(th, time, 19, 3.5),
+      }), this._planeAngleTo(hand, center), time);
       if (k >= 1) { this.state = 'idle'; this._ropeSeeded = false; }
       return;
     }
@@ -297,11 +329,17 @@ export class Lasso {
     // plane tips slightly, wobbling with the spin
     this._basis(this._v3.set(Math.cos(sa) * 0.16, 1, Math.sin(sa) * 0.16));
     const spinRate = aiming ? 1.35 : 1;
-    this._buildLoop(center, (th) => ({
-      // centrifugal lag: a rotating oval + travelling flutter waves
-      r: R * (1 + 0.09 * Math.sin(2 * th - sa * 2) + 0.05 * Math.sin(3 * th - time * 9 * spinRate) + 0.03 * Math.sin(5 * th + time * 13)),
-      lift: R * (0.07 * Math.sin(2 * th - sa * 2 + 1.2) + 0.04 * Math.sin(3 * th + time * 8)),
-    }), this._planeAngleTo(hand, center));
+    const phiHand = this._planeAngleTo(hand, center);
+    this._buildLoop(center, (th) => {
+      // centrifugal lag: a rotating oval + organic flutter; the far side
+      // of the loop sags under gravity away from the spoke
+      let d = th - phiHand; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2;
+      const far = 0.5 - 0.5 * Math.cos(d);
+      return {
+        r: R * (1 + 0.08 * Math.sin(2 * th - sa * 2) + 0.045 * this._ripple(th, time, 23, 1.3 * spinRate)),
+        lift: R * (0.06 * Math.sin(2 * th - sa * 2 + 1.2) + 0.04 * this._ripple(th, time, 29, 1.1) - 0.06 * far),
+      };
+    }, phiHand, time);
     this._ropeSim(dt, hand, this._hondaPt, { slack: 1.03, gravity: -8 });
 
     if (aiming) {
@@ -361,20 +399,27 @@ export class Lasso {
         P[ROPE_N - 1].copy(b);
         this._segLen = Math.max(0.06, (a.distanceTo(b) * slack) / (ROPE_N - 1));
       }
-      // distance constraints
-      for (let it = 0; it < 4; it++) {
-        for (let i = 0; i < ROPE_N - 1; i++) {
-          const p1 = P[i], p2 = P[i + 1];
-          const dx = p2.x - p1.x, dy = p2.y - p1.y, dz = p2.z - p1.z;
-          const d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-6;
-          const diff = (d - this._segLen) / d;
-          const w1 = i === 0 ? 0 : 0.5;
-          const w2 = (i + 1 === ROPE_N - 1 && pinEnd) ? 0 : 0.5;
-          const wSum = w1 + w2;
-          if (wSum === 0) continue;
-          const k1 = (w1 / wSum) * diff, k2 = (w2 / wSum) * diff;
-          p1.x += dx * k1; p1.y += dy * k1; p1.z += dz * k1;
-          p2.x -= dx * k2; p2.y -= dy * k2; p2.z -= dz * k2;
+      // distance constraints between neighbours, plus soft second-neighbour
+      // (bending) constraints so the rope curves instead of kinking
+      const relax = (i, j, rest, stiff) => {
+        const p1 = P[i], p2 = P[j];
+        const dx = p2.x - p1.x, dy = p2.y - p1.y, dz = p2.z - p1.z;
+        const d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-6;
+        const diff = ((d - rest) / d) * stiff;
+        const w1 = i === 0 ? 0 : 0.5;
+        const w2 = (j === ROPE_N - 1 && pinEnd) ? 0 : 0.5;
+        const wSum = w1 + w2;
+        if (wSum === 0) return;
+        const k1 = (w1 / wSum) * diff, k2 = (w2 / wSum) * diff;
+        p1.x += dx * k1; p1.y += dy * k1; p1.z += dz * k1;
+        p2.x -= dx * k2; p2.y -= dy * k2; p2.z -= dz * k2;
+      };
+      for (let it = 0; it < 5; it++) {
+        for (let i = 0; i < ROPE_N - 1; i++) relax(i, i + 1, this._segLen, 1);
+        for (let i = 0; i < ROPE_N - 2; i++) {
+          // only resist compression (bending), never stretch the rope straight
+          const d = P[i].distanceTo(P[i + 2]);
+          if (d < this._segLen * 1.9) relax(i, i + 2, this._segLen * 1.9, 0.25);
         }
       }
       // rope-terrain collision: no particle may sink below the ground
@@ -388,8 +433,9 @@ export class Lasso {
         for (let i = 1; i < ROPE_N; i++) if (P[i].y < a.y - 1.6) P[i].y = a.y - 1.6;
       }
     }
-    const curve = new THREE.CatmullRomCurve3(P);
-    const geo = new THREE.TubeGeometry(curve, ROPE_SEGS, ROPE_RADIUS, 6, false);
+    const curve = new THREE.CatmullRomCurve3(P, false, 'catmullrom', 0.5);
+    const geo = new THREE.TubeGeometry(curve, ROPE_SEGS, ROPE_RADIUS, ROPE_RADIAL, false);
+    layUVs(geo, curveLength(P, false), false);
     this.rope.geometry.dispose();
     this.rope.geometry = geo;
   }
