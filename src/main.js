@@ -229,10 +229,11 @@ ui.onMenu = () => {
   ui.showMenu();
 };
 
-ui.onBetCycle = () => {
+ui.onBetCycle = (dir = 1) => {
   if (wrangle) return;
   sfx.click();
-  wallet.custom.lasso = (wallet.custom.lasso + 1) % LASSO_TIERS.length;
+  const n = LASSO_TIERS.length;
+  wallet.custom.lasso = ((wallet.custom.lasso + dir) % n + n) % n;
   wallet.save();
   applyCustomization();
 };
@@ -458,10 +459,16 @@ function updateWrangle(dt, time) {
   if (dist > 1e-3) {
     away.divideScalar(dist);
     const drag = w.mode === 'crash' ? 0 : 0.7;
+    cow._prev.copy(cow.pos);
     cow.pos.addScaledVector(away, drag * dt);
-    const B = RANGE_HALF - 1.6;
-    cow.pos.x = THREE.MathUtils.clamp(cow.pos.x, -B, B);
-    cow.pos.z = THREE.MathUtils.clamp(cow.pos.z, -B, B);
+    // the fence, trees and buildings hold it like any other cow — a roped
+    // cow backed against the rails stays inside the pen
+    if (world.confine) world.confine(cow.pos, cow._prev, 0.9);
+    else {
+      const B = RANGE_HALF - 1.6;
+      cow.pos.x = THREE.MathUtils.clamp(cow.pos.x, -B, B);
+      cow.pos.z = THREE.MathUtils.clamp(cow.pos.z, -B, B);
+    }
     if (dist > 14) player.pos.addScaledVector(away, (dist - 14) * 4 * dt);
   }
   cow.heading += Math.sin(time * 3.1 + cow.id) * dt * 1.5;
@@ -536,7 +543,7 @@ function updateCamera(dt, time) {
     camera.lookAt(camLook);
     const w = window.innerWidth, h = window.innerHeight;
     const sheet = w <= 700 || h >= w;
-    camera.setViewOffset(w, h, sheet ? 0 : w * 0.21, sheet ? h * 0.2 : 0, w, h);
+    camera.setViewOffset(w, h, sheet ? 0 : w * 0.27, sheet ? h * 0.2 : 0, w, h);
     menuOffset = true;
     return;
   }

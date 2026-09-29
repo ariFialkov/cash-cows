@@ -348,9 +348,41 @@ export class Lasso {
       return;
     }
 
-    // idle / aiming: overhead spin
+    // rest (arm down by the thigh — the start screen, the ride-out sweep):
+    // the rope hangs from the hand in a loose coil beside the leg, nothing spins
     const aiming = this.state === 'aiming';
-    this.spinAngle += dt * (aiming ? 13 : 7.5);
+    const resting = !aiming && player.armPose === 'rest';
+    if (resting !== this._wasResting) { this._wasResting = resting; this._ropeSeeded = false; }
+    if (resting) {
+      const h = player.heading || 0;
+      const fx = Math.sin(h), fz = Math.cos(h);          // rider forward
+      const rx = Math.cos(h), rz = -Math.sin(h);         // rider's right (the rope hand)
+      const sway = Math.sin(time * 1.3) * 0.05 + Math.sin(time * 2.9) * 0.02;
+      const R = 0.3;
+      const center = this._v2.set(
+        hand.x + rx * 0.14 + fx * (0.04 + sway * 0.5),
+        hand.y - 0.3 - R * 0.55,
+        hand.z + rz * 0.14 + fz * (0.04 + sway * 0.5)
+      );
+      // coil plane faces outward, swinging a touch fore and aft
+      this._basis(this._v3.set(rx + fx * sway, 0.06, rz + fz * sway));
+      const phiTop = this._planeAngleTo(this._v3.set(center.x, center.y + 1, center.z), center);
+      this.loopRadius = R;
+      this._buildLoop(center, (th) => {
+        let d = th - phiTop; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2;
+        return {
+          // hangs taller than wide off the knot, a couple of strands' worth of wobble
+          r: R * (1 + 0.16 * Math.cos(2 * d) + 0.03 * this._ripple(th, time, 31, 0.4)),
+          lift: R * (0.05 * Math.sin(3 * th + 0.4) + 0.03 * this._ripple(th, time, 37, 0.3)),
+        };
+      }, phiTop, time * 0.15, 0.6);
+      this._ropeSim(dt, hand, this._hondaPt, { slack: 1.02, gravity: -10, minSeg: 0.015, damping: 0.95 });
+      return;
+    }
+
+    // idle / aiming: overhead spin
+    const omega = aiming ? 13 : 7.5;
+    this.spinAngle += dt * omega;
     const sa = this.spinAngle;
     const R = aiming ? 1.0 : 0.78;
     this.loopRadius = R;
@@ -390,7 +422,17 @@ export class Lasso {
         lift: R * (0.06 * Math.sin(2 * th - phiHonda * 2 + 1.9) + 0.04 * this._ripple(th, time, 29, 1.1) - 0.06 * far),
       };
     }, phiHonda, time);
-    this._ropeSim(dt, hand, this._hondaPt, { slack: 1.03, gravity: -8 });
+    // the spoke: the loop's own centrifugal pull keeps it near straight, so
+    // barely any slack, fine segments (the old 6 cm floor alone added ~70%
+    // rope) and the spin's outward acceleration on every particle
+    this._ropeSim(dt, hand, this._hondaPt, {
+      slack: 1.012, gravity: -8, minSeg: 0.015, damping: 0.965,
+      spin: { x: center.x, z: center.z, w2: omega * omega * 0.25, cap: 10 },
+      // the honda whips round at ~5 m/s: the chain is dragged toward the
+      // straight hand–honda line each step (a rigid shift, no velocity kick)
+      // so the spoke follows instead of trailing a bight behind the knot
+      follow: 1 - Math.exp(-dt / 0.014),
+    });
 
     if (aiming) {
       const pts = [];
@@ -422,7 +464,9 @@ export class Lasso {
   // Verlet rope: integrate gravity + damping, then satisfy segment-length
   // constraints with both ends pinned (hand and honda). With pinEnd=false the
   // far end runs free — used while the rope whips back after a snap.
-  _ropeSim(dt, a, b, { slack = 1.08, gravity = -10, pinEnd = true, damping = 0.985 } = {}) {
+  // `spin` adds the centrifugal acceleration of a rope whirling about the
+  // vertical axis through (x, z): outward, w2 (rad²/s²) times the radius.
+  _ropeSim(dt, a, b, { slack = 1.08, gravity = -10, pinEnd = true, damping = 0.985, minSeg = 0.06, spin = null, follow = 0 } = {}) {
     const P = this.ropeP, V = this.ropePrev;
     if (!this._ropeSeeded) {
       for (let i = 0; i < ROPE_N; i++) {
@@ -440,14 +484,33 @@ export class Lasso {
         const p = P[i], v = V[i];
         const vx = (p.x - v.x) * damping, vy = (p.y - v.y) * damping, vz = (p.z - v.z) * damping;
         v.copy(p);
-        p.x += vx;
+        let ax = 0, az = 0;
+        if (spin) {
+          const ox = p.x - spin.x, oz = p.z - spin.z;
+          const d = Math.sqrt(ox * ox + oz * oz);
+          if (d > 1e-4) {
+            const acc = Math.min(spin.cap, spin.w2 * d);
+            ax = (ox / d) * acc; az = (oz / d) * acc;
+          }
+        }
+        p.x += vx + ax * h * h;
         p.y += vy + gravity * h * h;
-        p.z += vz;
+        p.z += vz + az * h * h;
       }
       P[0].copy(a);
       if (pinEnd) {
         P[ROPE_N - 1].copy(b);
-        this._segLen = Math.max(0.06, (a.distanceTo(b) * slack) / (ROPE_N - 1));
+        this._segLen = Math.max(minSeg, (a.distanceTo(b) * slack) / (ROPE_N - 1));
+        if (follow > 0) {
+          const f = 1 - Math.pow(1 - follow, 1 / steps);
+          for (let i = 1; i < ROPE_N - 1; i++) {
+            const t = i / (ROPE_N - 1);
+            const p = P[i], v = V[i];
+            const dx = (a.x + (b.x - a.x) * t - p.x) * f, dy = (a.y + (b.y - a.y) * t - p.y) * f, dz = (a.z + (b.z - a.z) * t - p.z) * f;
+            p.x += dx; p.y += dy; p.z += dz;
+            v.x += dx; v.y += dy; v.z += dz;
+          }
+        }
       }
       // distance constraints between neighbours, plus soft second-neighbour
       // (bending) constraints so the rope curves instead of kinking
@@ -464,7 +527,8 @@ export class Lasso {
         p1.x += dx * k1; p1.y += dy * k1; p1.z += dz * k1;
         p2.x -= dx * k2; p2.y -= dy * k2; p2.z -= dz * k2;
       };
-      for (let it = 0; it < 5; it++) {
+      const iters = follow > 0 ? 10 : 5;
+      for (let it = 0; it < iters; it++) {
         for (let i = 0; i < ROPE_N - 1; i++) relax(i, i + 1, this._segLen, 1);
         for (let i = 0; i < ROPE_N - 2; i++) {
           // only resist compression (bending), never stretch the rope straight

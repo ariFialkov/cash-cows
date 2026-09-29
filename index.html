@@ -68,8 +68,10 @@
     <div id="balance-pill" class="chip chip-gold">
       <svg class="ico"><use href="#i-coin"/></svg><span id="balance-value">0</span>
     </div>
-    <div id="bet-pill" class="chip" title="Lasso / bet size — tap to change">
-      <svg class="ico rope-ico" id="bet-rope-swatch"><use href="#i-rope"/></svg><span id="bet-value">10</span><small>bet</small>
+    <div id="bet-pill" class="chip" title="Lasso / bet size">
+      <button id="bet-prev" class="bet-arrow" aria-label="Lower bet"><svg class="ico"><use href="#i-arrow"/></svg></button>
+      <span class="bet-body"><svg class="ico rope-ico" id="bet-rope-swatch"><use href="#i-rope"/></svg><span id="bet-value">10</span><small>bet</small></span>
+      <button id="bet-next" class="bet-arrow" aria-label="Raise bet"><svg class="ico"><use href="#i-arrow"/></svg></button>
     </div>
     <button id="menu-btn" class="chip chip-btn" aria-label="Menu"><svg class="ico"><use href="#i-menu"/></svg></button>
     <div id="minimap-wrap"><canvas id="minimap" width="138" height="138"></canvas></div>
@@ -102,35 +104,34 @@
       <div class="panel-scroll">
         <p class="tagline">Saddle up &middot; rope &rsquo;em &middot; cash out</p>
 
-        <section class="sec">
-          <h3><svg class="ico"><use href="#i-hat"/></svg>Cowboy</h3>
-          <div class="cowboy-cards" id="cowboy-picks"></div>
-        </section>
+        <div class="sec-grid">
+          <section class="sec sec-cowboy">
+            <h3><svg class="ico"><use href="#i-hat"/></svg>Cowboy</h3>
+            <div class="cowboy-cards" id="cowboy-picks"></div>
+          </section>
 
-        <section class="sec">
-          <h3>Outfit <small>as painted, or your colours</small></h3>
-          <div class="outfit-rows" id="outfit-rows"></div>
-        </section>
+          <section class="sec sec-outfit">
+            <h3>Outfit <small>painted / yours</small></h3>
+            <div class="outfit-rows" id="outfit-rows"></div>
+          </section>
+        </div>
 
-        <section class="sec">
+        <section class="sec sec-horse">
           <h3><svg class="ico"><use href="#i-shoe"/></svg>Horse</h3>
           <div class="horse-mini" id="horse-mini">
-            <div class="hm-head">
-              <svg class="hm-ico" id="horse-mini-ico"><use href="#i-horse"/></svg>
-              <div class="hm-name"><b id="horse-name">Quarter Horse</b><span class="rarity" id="horse-rarity">Common</span></div>
-              <button id="stable-btn" class="btn-ghost">Stable <svg class="ico"><use href="#i-arrow"/></svg></button>
-            </div>
+            <svg class="hm-ico" id="horse-mini-ico"><use href="#i-horse"/></svg>
+            <div class="hm-name"><b id="horse-name">Quarter Horse</b><span class="rarity" id="horse-rarity">Common</span></div>
             <div class="hm-stats" id="horse-mini-stats"></div>
+            <button id="stable-btn" class="btn-ghost">Stable <svg class="ico"><use href="#i-arrow"/></svg></button>
           </div>
-        </section>
-
-        <section class="sec">
-          <h3><svg class="ico"><use href="#i-rope"/></svg>Lasso <small>bet per throw</small></h3>
-          <div class="tier-row" id="lasso-swatches"></div>
         </section>
       </div>
 
       <div class="panel-foot">
+        <section class="sec sec-lasso">
+          <h3><svg class="ico"><use href="#i-rope"/></svg>Lasso <small>bet per throw</small></h3>
+          <div class="tier-row" id="lasso-swatches"></div>
+        </section>
         <button id="start-btn" class="big-btn"><span>RIDE OUT</span></button>
         <p class="howto">
           <b>Move</b> <span class="only-touch">left joystick</span><span class="only-mouse">WASD</span>

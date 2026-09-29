@@ -34,7 +34,8 @@ export class UI {
     this._buildPickers();
     this._buildStable();
     $('start-btn').addEventListener('click', () => this.onStart?.());
-    $('bet-pill').addEventListener('click', () => this.onBetCycle?.());
+    $('bet-prev').addEventListener('click', () => this.onBetCycle?.(-1));
+    $('bet-next').addEventListener('click', () => this.onBetCycle?.(1));
     $('menu-btn').addEventListener('click', () => this.onMenu?.());
     $('stable-btn').addEventListener('click', () => this.openStable());
     $('stable-close').addEventListener('click', () => this.closeStable());
@@ -254,6 +255,11 @@ export class UI {
     const tier = LASSO_TIERS[this.wallet.custom.lasso];
     $('bet-value').textContent = tier.bet;
     $('bet-rope-swatch').style.color = hex(tier.color);
+    // a little bounce on the number so the change registers
+    const body = $('bet-pill').querySelector('.bet-body');
+    body.classList.remove('bump');
+    void body.offsetWidth;
+    body.classList.add('bump');
   }
 
   toast(msg, cls = '') {

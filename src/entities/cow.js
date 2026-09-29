@@ -355,6 +355,8 @@ export class Cow {
     this._prev = new THREE.Vector3(x, 0, z);
     this.grade = 0;
     this.pace = 1;
+    // body collider radius (herd.js keeps cattle and horses out of each other)
+    this.r = 0.58 * this.size * (kind === 'crash' ? 1.15 : 1);
   }
 
   // cattle won't walk into deep water: bend the heading toward the shallower side

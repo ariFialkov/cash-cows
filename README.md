@@ -39,7 +39,7 @@ the throw while aiming.
   a Light horse hits 15 m/s but scrubs speed in sharp turns, a Draft is slow
   to get going but rock steady, a Pony turns on a dime.
 - **Lasso = bet size.** Pick your rope in the menu (5 / 10 / 25 / 100 coins) or
-  tap the bet pill in-game to cycle. Missed throws cost nothing.
+  use the arrows on the bet chip in-game. Missed throws cost nothing.
 - **Aim assist.** Throws magnetize to a cow near the landing point (the aim
   ring locks on and turns green) and the loop tracks it in flight, so fleeing
   cows are hittable without pixel-perfect swipes.
@@ -221,9 +221,13 @@ Monte Carlo (2M draws per cow type ⇒ 0.952–0.962 across every type/strategy)
   instead of kinking, and the particles are kept out of the animals by three
   capsule colliders per body (torso, neck, head; radii measured once from each
   model's mesh, endpoints riding the bones) for both the roped cow and the
-  rider's horse: overhead spin at idle, a ballistic arc with trailing
-  line on throw, and a taut, sagging line with a cinched loop during a
-  wrangle. On a catch the loop cinches: it closes from its landing size down
+  rider's horse: overhead spin at idle (the spoke stays near straight — 1%
+  slack, fine segments, the spin's outward acceleration on every particle and
+  a rigid drag toward the hand–honda line so the whirling knot never trails
+  a bight), a coil hanging beside the rider's leg whenever the arm is down
+  (start screen, ride-out sweep), a ballistic arc with trailing line on
+  throw, and a taut, sagging line with a cinched loop during a wrangle. On a
+  catch the loop cinches: it closes from its landing size down
   onto the neck in a third of a second, seated on a ring the cow rig measures
   from its own model (neck axis between throat and poll, girth from the mesh's
   half-width there) so it sits perpendicular to the neck and fits every size
@@ -241,7 +245,16 @@ Monte Carlo (2M draws per cow type ⇒ 0.952–0.962 across every type/strategy)
   the cowboy picker shows real portraits rendered from the three models in
   the chosen shirt (`ui/portraits.js`, an offscreen renderer, cached per
   shirt), lasso tiers are cards, and the horse card carries rarity and
-  stats. The HUD is glass chips with a leather-bezelled radar.
+  stats. The panel is laid out to fit without scrolling (cowboys beside the
+  outfit rows on wide screens, a one-row horse card) and the lasso tiers sit
+  in the fixed footer next to the ride-out button so the bet is never
+  scrolled out of view. The HUD is glass chips with a leather-bezelled
+  radar; the bet chip carries arrow buttons that step the tier down and up.
+- **Cattle colliders.** Cows near the player are hashed into 4 m cells each
+  frame and pushed apart pairwise (a roped cow mostly holds its ground), and
+  out of every horse; only the cow moves, so riders never feel a bump. A
+  roped cow dragged during a wrangle goes through the same fence/tree/barn
+  confinement as a free one, so it can't be pulled through the rails.
 - Sound effects are synthesized with WebAudio — no audio files.
 - `window.__cc` exposes a small debug handle used by the Playwright smoke
   tests.
