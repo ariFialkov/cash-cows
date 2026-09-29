@@ -18,6 +18,7 @@ import { HorseRider, COWBOY_COLORS } from './horse.js';
 import { HORSE_TYPES } from '../game/horses.js';
 import { fbm2 } from '../core/rng.js';
 import { GaitEngine } from './gait.js';
+import { modelUrl } from '../assets/models/index.js';
 
 const cache = new Map();
 
@@ -29,7 +30,7 @@ export function loadRigTemplate(model, height, opts = {}) {
   const p = new Promise((resolve, reject) => {
     const loader = new GLTFLoader();
     loader.setMeshoptDecoder(MeshoptDecoder);
-    loader.load(`${import.meta.env.BASE_URL}models/${model}.glb`,
+    loader.load(modelUrl(model),
       (g) => resolve(prepareTemplate(g.scene, height, opts)), undefined, reject);
   });
   cache.set(model, p);

@@ -1,4 +1,4 @@
-// Model pipeline: models-src/*.fbx -> public/models/*.glb (meshopt-compressed).
+// Model pipeline: models-src/*.fbx -> src/assets/models/*.glb (meshopt-compressed).
 // Run: node tools/convert-models.mjs
 import { chromium } from 'playwright';
 import { createServer } from 'node:http';
@@ -16,7 +16,7 @@ const server = createServer((req, res) => {
   res.end(readFileSync(p));
 }).listen(8951);
 
-mkdirSync(join(ROOT, 'public/models'), { recursive: true });
+mkdirSync(join(ROOT, 'src/assets/models'), { recursive: true });
 const browser = await chromium.launch({
   executablePath: process.env.PLAYWRIGHT_CHROMIUM || '/opt/pw-browsers/chromium',
   args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
@@ -29,8 +29,8 @@ for (const name of names) {
   const err = await page.evaluate(() => window.__err);
   if (err) { console.error(name, 'FAILED:', err); continue; }
   const bytes = await page.evaluate(() => Array.from(window.__glb));
-  const raw = join(ROOT, `public/models/${name}.raw.glb`);
-  const out = join(ROOT, `public/models/${name}.glb`);
+  const raw = join(ROOT, `src/assets/models/${name}.raw.glb`);
+  const out = join(ROOT, `src/assets/models/${name}.glb`);
   writeFileSync(raw, Buffer.from(bytes));
   execSync(`npx gltf-transform optimize "${raw}" "${out}" --compress meshopt --texture-compress false --simplify false --prune-attributes false`, { cwd: ROOT, stdio: 'pipe' });
   execSync(`rm "${raw}"`);

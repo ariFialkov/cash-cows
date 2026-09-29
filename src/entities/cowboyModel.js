@@ -11,6 +11,7 @@
 
 import * as THREE from 'three';
 import { loadRigTemplate, instantiateRig, setBoneWorldRot } from './horseModel.js';
+import { textureUrl } from '../assets/models/index.js';
 
 export const COWBOYS = [
   { id: 'ranger',   model: 'cowboy1', name: 'Ranger',   height: 1.78, hasCoat: false, chaps: false },
@@ -69,9 +70,8 @@ function loadImage(url) {
 }
 function loadCowboyTextures(model) {
   if (texCache.has(model)) return texCache.get(model);
-  const base = `${import.meta.env.BASE_URL}models/tex/${model}`;
   const p = (async () => {
-    const [albedo, normal, rough] = await Promise.all([loadImage(`${base}_albedo.webp`), loadImage(`${base}_normal.webp`), loadImage(`${base}_rough.webp`)]);
+    const [albedo, normal, rough] = await Promise.all([loadImage(textureUrl(`${model}_albedo`)), loadImage(textureUrl(`${model}_normal`)), loadImage(textureUrl(`${model}_rough`))]);
     const mk = (img, srgb) => {
       const t = new THREE.Texture(img);
       // the rigs were exported from FBX without textures, so their UVs keep

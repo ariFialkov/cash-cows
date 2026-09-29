@@ -164,7 +164,7 @@ Monte Carlo (2M draws per cow type ⇒ 0.952–0.962 across every type/strategy)
   the horse's head. He looks at the cow he is working and into turns.
 - **Textured cowboys with recolourable garments.** Each cowboy model wears
   its own painted texture set (1024² albedo + normal, 512² roughness, WebP,
-  `public/models/tex/`), so faces and clothes are real. On top, every
+  `src/assets/models/tex/`), so faces and clothes are real. On top, every
   garment (hat, shirt, bandana, pants, boots, and the Drifter's coat) can
   keep its painted look or take a palette colour: the mesh is classified
   into regions by bone weights, refined by the texture's own colours (each
@@ -281,6 +281,7 @@ src/
   ui/ui.js             menu, stable storefront, HUD, toasts, rider popups
   ui/minimap.js        radar minimap
   core/                rng & noise, loft geometry, particles, WebAudio sfx
-public/models/         compressed horse, cattle + cowboy GLBs (built from models-src/*.fbx)
+src/assets/models/     compressed horse, cattle + cowboy GLBs (built from models-src/*.fbx) and the
+                       cowboy texture maps — all inlined into the JS bundle at build time
 tools/                 model pipeline (FBX → GLB), rig inspector, gait/cow filmstrip viewers, icon generator
 ```

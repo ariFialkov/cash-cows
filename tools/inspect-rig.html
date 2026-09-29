@@ -5,7 +5,7 @@
 { "imports": { "three": "/node_modules/three/build/three.module.js",
                "three/addons/": "/node_modules/three/examples/jsm/" } }
 </script></head><body><script type="module">
-// Dev tool: renders a GLB from public/models in bind pose (side + front +
+// Dev tool: renders a GLB from src/assets/models in bind pose (side + front +
 // top) and dumps its bone tree with world positions, skin weight sums and
 // vertex spans. Query: ?m=cow
 import * as THREE from 'three';
@@ -21,7 +21,7 @@ scene.background = new THREE.Color(0x9fb8c8);
 scene.add(new THREE.HemisphereLight(0xffffff, 0x667755, 1.1));
 const sun = new THREE.DirectionalLight(0xffffff, 1.6); sun.position.set(3, 5, 2); scene.add(sun);
 const loader = new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder);
-loader.load(`/public/models/${name}.glb`, (g) => {
+loader.load(`/src/assets/models/${name}.glb`, (g) => {
   g.scene.updateMatrixWorld(true);
   let mesh; g.scene.traverse((o) => { if (o.isSkinnedMesh) mesh = o; });
   mesh.material = new THREE.MeshStandardMaterial({ color: 0xc8b8a0, roughness: 0.8 });

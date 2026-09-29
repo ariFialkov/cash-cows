@@ -9,7 +9,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 const name = new URLSearchParams(location.search).get('m') || 'draft';
 const loader = new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder);
-loader.load(`/public/models/${name}.glb`, (g) => {
+loader.load(`/src/assets/models/${name}.glb`, (g) => {
   g.scene.updateMatrixWorld(true);
   let mesh; g.scene.traverse((o) => { if (o.isSkinnedMesh) mesh = o; });
   const geo = mesh.geometry, si = geo.attributes.skinIndex, sw = geo.attributes.skinWeight;
