@@ -110,6 +110,7 @@ const CAM_PITCH_IDLE = 44 * Math.PI / 180, CAM_PITCH_RUN = 24 * Math.PI / 180;
 const CAM_FOV_IDLE = 50, CAM_FOV_RUN = 55;
 const CAM_OFFSET = new THREE.Vector3(0, Math.sin(CAM_PITCH_IDLE) * CAM_DIST, Math.cos(CAM_PITCH_IDLE) * CAM_DIST);
 let camRun = 0;
+let menuOffset = false;
 const camLook = new THREE.Vector3();
 
 function applyCustomization() {
@@ -197,6 +198,7 @@ ui.onCustomize = (kind, i) => {
   wallet.save();
   applyCustomization();
   if (kind === 'cowboy') dressPlayer(player.rig);
+  if (kind === 'shirt') ui.refreshPortraits();
 };
 
 ui.onStart = () => {
@@ -513,16 +515,23 @@ function updateWrangle(dt, time) {
 
 function updateCamera(dt, time) {
   if (state === 'menu') {
-    const az = time * 0.22;
+    // hero shot: a slow orbit round the rider, framed beside the panel
+    // (left of it on a wide screen, above it on a phone)
+    const az = time * 0.18;
     camera.position.set(
-      player.pos.x + Math.sin(az) * 7,
-      player.pos.y + 2.4,
-      player.pos.z + Math.cos(az) * 7
+      player.pos.x + Math.sin(az) * 6.4,
+      player.pos.y + 2.1,
+      player.pos.z + Math.cos(az) * 6.4
     );
-    camLook.set(player.pos.x, player.pos.y + 1.2, player.pos.z);
+    camLook.set(player.pos.x, player.pos.y + 1.25, player.pos.z);
     camera.lookAt(camLook);
+    const w = window.innerWidth, h = window.innerHeight;
+    const sheet = w <= 700 || h >= w;
+    camera.setViewOffset(w, h, sheet ? 0 : w * 0.21, sheet ? h * 0.2 : 0, w, h);
+    menuOffset = true;
     return;
   }
+  if (menuOffset) { camera.clearViewOffset(); menuOffset = false; }
 
   const runK = THREE.MathUtils.clamp((player.speed - 2) / (player.maxSpeed - 2), 0, 1);
   camRun += (runK - camRun) * (1 - Math.exp(-dt * 1.4));

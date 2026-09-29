@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-  <meta name="theme-color" content="#2c1a0e" />
+  <meta name="theme-color" content="#1c110a" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -11,21 +11,68 @@
   <link rel="manifest" href="./manifest.json" />
   <link rel="icon" href="./icons/icon-192.png" />
   <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rye&family=Nunito:wght@600;700;800;900&display=swap" />
   <title>Cash Cows</title>
 </head>
 <body>
   <canvas id="game-canvas"></canvas>
 
+  <!-- ===== icon sprites ===== -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <linearGradient id="g-coin" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#ffe9a8"/><stop offset=".55" stop-color="#f2b632"/><stop offset="1" stop-color="#b8780f"/>
+      </linearGradient>
+    </defs>
+    <symbol id="i-coin" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="10.5" fill="url(#g-coin)" stroke="#7a4f08" stroke-width="1.2"/>
+      <circle cx="12" cy="12" r="7.6" fill="none" stroke="#7a4f08" stroke-width="1" opacity=".55"/>
+      <path d="M12 7.2v9.6M14.6 9.6c0-1-1.1-1.7-2.6-1.7s-2.6.7-2.6 1.7 1 1.5 2.6 1.9 2.6 1 2.6 2-1.1 1.7-2.6 1.7-2.6-.7-2.6-1.7" fill="none" stroke="#5a3a06" stroke-width="1.5" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-rope" viewBox="0 0 24 24">
+      <ellipse cx="11" cy="11" rx="8" ry="6.2" fill="none" stroke="currentColor" stroke-width="2.4"/>
+      <path d="M18.4 13.4c2 2.2 2.4 5 1.4 8.2" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+      <circle cx="18.2" cy="13.2" r="1.9" fill="currentColor"/>
+    </symbol>
+    <symbol id="i-hat" viewBox="0 0 24 24">
+      <path d="M2.5 14.5c2.6 3.4 16.4 3.4 19 0-1.8-.4-3.3-.8-4.5-1.1V8.6C17 6.4 14.9 5 12 5S7 6.4 7 8.6v4.8c-1.2.3-2.7.7-4.5 1.1z" fill="currentColor"/>
+      <path d="M7 12.6c1.5.8 8.5.8 10 0" fill="none" stroke="#1c110a" stroke-width="1.3" opacity=".55"/>
+    </symbol>
+    <symbol id="i-shoe" viewBox="0 0 24 24">
+      <path d="M6.2 21V11.5a5.8 5.8 0 0 1 11.6 0V21" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round"/>
+      <circle cx="6.2" cy="15" r=".9" fill="#1c110a"/><circle cx="17.8" cy="15" r=".9" fill="#1c110a"/>
+      <circle cx="8.4" cy="9.4" r=".9" fill="#1c110a"/><circle cx="15.6" cy="9.4" r=".9" fill="#1c110a"/>
+    </symbol>
+    <symbol id="i-cow" viewBox="0 0 32 32">
+      <path d="M3 8c3 .6 5.8 2.4 7.6 4.6M29 8c-3 .6-5.8 2.4-7.6 4.6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
+      <path d="M9.5 11h13l2.2 6.6-2.4 7.2c-.8 2.4-3 3.8-6.3 3.8s-5.5-1.4-6.3-3.8L7.3 17.6z" fill="currentColor"/>
+      <circle cx="12.4" cy="17.2" r="1.5" fill="#1c110a"/><circle cx="19.6" cy="17.2" r="1.5" fill="#1c110a"/>
+      <ellipse cx="14" cy="24.4" rx="1.1" ry="1.4" fill="#1c110a"/><ellipse cx="18" cy="24.4" rx="1.1" ry="1.4" fill="#1c110a"/>
+    </symbol>
+    <symbol id="i-horse" viewBox="0 0 32 32">
+      <path class="mane" d="M15.5 4.5 17 2l3 3.4c2.4 1.2 4 3 5 5.4l-2.6 1.2-1.2-2.4-3.6.4z" fill="currentColor" opacity=".55"/>
+      <path d="M8 30c-.3-6.5 1.6-11 4.7-14.2l1.3-7.3 3.5 2.5 4.6 1.3c2.1 1.1 3.3 3 3.5 5.6l-1.6 1.2-2.4-1.6c-1.4 2.2-2.6 4.8-3.1 8.4L16.9 30z" fill="currentColor"/>
+      <circle cx="21" cy="15.2" r="1.1" fill="#1c110a"/>
+    </symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 2.6l2.9 6.1 6.7.8-4.9 4.6 1.3 6.6L12 17.4l-6 3.3 1.3-6.6L2.4 9.5l6.7-.8z" fill="currentColor"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M4.5 12.5l4.6 4.6L19.5 6.7" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h13M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  </svg>
+
   <!-- ===== HUD (in-game) ===== -->
   <div id="hud" class="hidden">
-    <div id="balance-pill" class="pill">
-      <span class="coin-ico"></span><span id="balance-value">0</span>
+    <div id="balance-pill" class="chip chip-gold">
+      <svg class="ico"><use href="#i-coin"/></svg><span id="balance-value">0</span>
     </div>
-    <div id="bet-pill" class="pill" title="Lasso / bet size — tap to change">
-      <span id="bet-rope-swatch"></span><span id="bet-value">10</span>
+    <div id="bet-pill" class="chip" title="Lasso / bet size — tap to change">
+      <svg class="ico rope-ico" id="bet-rope-swatch"><use href="#i-rope"/></svg><span id="bet-value">10</span><small>bet</small>
     </div>
-    <button id="menu-btn" class="pill" aria-label="Menu">&#9776;</button>
-    <canvas id="minimap" width="138" height="138"></canvas>
+    <button id="menu-btn" class="chip chip-btn" aria-label="Menu"><svg class="ico"><use href="#i-menu"/></svg></button>
+    <div id="minimap-wrap"><canvas id="minimap" width="138" height="138"></canvas></div>
     <div id="toast-stack"></div>
     <div id="joystick-zone">
       <div id="joystick-base"><div id="joystick-knob"></div></div>
@@ -38,48 +85,69 @@
     <div id="rp-inner"></div>
   </div>
 
-  <!-- ===== Main menu ===== -->
+  <!-- ===== Start screen ===== -->
   <div id="menu" class="screen">
-    <div class="menu-card">
-      <h1 class="logo">CASH<span>&#129704;</span>COWS</h1>
-      <p class="tagline">saddle up &middot; rope 'em &middot; cash out</p>
-
-      <div class="custom-rows">
-        <div class="custom-row">
-          <span class="custom-label">Cowboy</span>
-          <div class="pick-row" id="cowboy-picks"></div>
-        </div>
-        <div class="custom-row">
-          <span class="custom-label">Shirt</span>
-          <div class="swatch-row" id="cowboy-swatches"></div>
-        </div>
-        <div class="custom-row">
-          <span class="custom-label">Horse <small id="horse-name">Quarter Horse</small></span>
-          <button id="stable-btn" class="stable-btn">&#127968; STABLE</button>
-        </div>
-        <div class="custom-row">
-          <span class="custom-label">Lasso <small>(bet / throw)</small></span>
-          <div class="swatch-row" id="lasso-swatches"></div>
-        </div>
+    <header class="menu-top">
+      <div class="brand">
+        <svg class="brand-ico"><use href="#i-cow"/></svg>
+        <span class="brand-text">CASH <em>COWS</em></span>
       </div>
-
-      <button id="start-btn" class="big-btn">RIDE&nbsp;OUT</button>
-      <div class="menu-balance"><span class="coin-ico"></span><span id="menu-balance-value">0</span>
+      <div class="chip chip-gold menu-balance">
+        <svg class="ico"><use href="#i-coin"/></svg><span id="menu-balance-value">0</span>
         <button id="reset-balance-btn" class="tiny-btn hidden">top up</button>
       </div>
-      <p class="howto">
-        <b>Move:</b> <span class="only-touch">left joystick</span><span class="only-mouse">WASD</span>
-        &nbsp;&nbsp;<b>Lasso:</b> <span class="only-touch">swipe</span><span class="only-mouse">click-drag &amp; release</span> toward a cow
-      </p>
-    </div>
+    </header>
+
+    <aside class="menu-panel">
+      <div class="panel-scroll">
+        <p class="tagline">Saddle up &middot; rope &rsquo;em &middot; cash out</p>
+
+        <section class="sec">
+          <h3><svg class="ico"><use href="#i-hat"/></svg>Cowboy</h3>
+          <div class="cowboy-cards" id="cowboy-picks"></div>
+        </section>
+
+        <section class="sec sec-inline">
+          <h3>Shirt</h3>
+          <div class="swatch-row" id="cowboy-swatches"></div>
+        </section>
+
+        <section class="sec">
+          <h3><svg class="ico"><use href="#i-shoe"/></svg>Horse</h3>
+          <div class="horse-mini" id="horse-mini">
+            <div class="hm-head">
+              <svg class="hm-ico" id="horse-mini-ico"><use href="#i-horse"/></svg>
+              <div class="hm-name"><b id="horse-name">Quarter Horse</b><span class="rarity" id="horse-rarity">Common</span></div>
+              <button id="stable-btn" class="btn-ghost">Stable <svg class="ico"><use href="#i-arrow"/></svg></button>
+            </div>
+            <div class="hm-stats" id="horse-mini-stats"></div>
+          </div>
+        </section>
+
+        <section class="sec">
+          <h3><svg class="ico"><use href="#i-rope"/></svg>Lasso <small>bet per throw</small></h3>
+          <div class="tier-row" id="lasso-swatches"></div>
+        </section>
+      </div>
+
+      <div class="panel-foot">
+        <button id="start-btn" class="big-btn"><span>RIDE OUT</span></button>
+        <p class="howto">
+          <b>Move</b> <span class="only-touch">left joystick</span><span class="only-mouse">WASD</span>
+          <i>&middot;</i>
+          <b>Lasso</b> <span class="only-touch">swipe</span><span class="only-mouse">click-drag &amp; release</span> toward a cow
+        </p>
+      </div>
+    </aside>
   </div>
+
   <!-- ===== Stable (horse storefront) ===== -->
   <div id="stable" class="hidden">
     <div class="stable-panel">
       <div class="stable-head">
-        <h2>The Stable</h2>
-        <div class="stable-balance"><span class="coin-ico"></span><span id="stable-balance-value">0</span></div>
-        <button id="stable-close" class="pill" aria-label="Close">&#10005;</button>
+        <h2><svg class="ico"><use href="#i-shoe"/></svg>The Stable</h2>
+        <div class="chip chip-gold stable-balance"><svg class="ico"><use href="#i-coin"/></svg><span id="stable-balance-value">0</span></div>
+        <button id="stable-close" class="chip chip-btn" aria-label="Close"><svg class="ico"><use href="#i-x"/></svg></button>
       </div>
       <div class="stable-tabs" id="stable-tabs"></div>
       <div class="stable-type" id="stable-type"></div>

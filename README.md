@@ -223,6 +223,15 @@ Monte Carlo (2M draws per cow type ⇒ 0.952–0.962 across every type/strategy)
   twisted texture (colour + bump, one lay per 12 cm of rope, UVs rescaled per
   frame); the lasso tier shows as a coloured tracer strand and a faint tint
   rather than a solid colour.
+- **UI.** Dark tooled leather, brass and cream: a frosted leather panel with
+  saddle stitching, a western display face (Rye) over Nunito (system fonts
+  offline), inline SVG icon sprites (coin, rope, hat, horseshoe, cow, horse
+  head coloured by coat) and procedural SVG grain. The start screen is a
+  full layout: the live rider orbits beside the panel (above it on phones),
+  the cowboy picker shows real portraits rendered from the three models in
+  the chosen shirt (`ui/portraits.js`, an offscreen renderer, cached per
+  shirt), lasso tiers are cards, and the horse card carries rarity and
+  stats. The HUD is glass chips with a leather-bezelled radar.
 - Sound effects are synthesized with WebAudio — no audio files.
 - `window.__cc` exposes a small debug handle used by the Playwright smoke
   tests.

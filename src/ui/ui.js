@@ -1,12 +1,16 @@
-// DOM overlay: menu customization, HUD, toasts, and the popup that floats
-// above the rider (wrangle progress / offer deal / crash cash-out).
+// DOM overlay: the start screen (cowboy portraits, shirt, horse, lasso tier),
+// HUD, toasts, the stable storefront and the popup that floats above the
+// rider (wrangle progress / offer deal / crash cash-out).
 
 import { LASSO_TIERS, fmt } from '../game/economy.js';
 import { COWBOY_COLORS } from '../entities/horse.js';
 import { COWBOYS } from '../entities/cowboyModel.js';
 import { HORSE_TYPES, HORSE_SPECIES, RARITY, speciesStats, getSpecies } from '../game/horses.js';
+import { cowboyPortrait } from './portraits.js';
 
 const $ = (id) => document.getElementById(id);
+const hex = (n) => '#' + n.toString(16).padStart(6, '0');
+const icon = (id, cls = 'ico') => `<svg class="${cls}"><use href="#${id}"/></svg>`;
 
 export class UI {
   constructor(wallet) {
@@ -28,7 +32,7 @@ export class UI {
     this.stableTab = 'light';
     this.previewId = null;
 
-    this._buildSwatches();
+    this._buildPickers();
     this._buildStable();
     $('start-btn').addEventListener('click', () => this.onStart?.());
     $('bet-pill').addEventListener('click', () => this.onBetCycle?.());
@@ -41,54 +45,93 @@ export class UI {
     });
   }
 
-  _swatchRow(rowEl, items, kind, getColor, selected, withBetTag) {
-    rowEl.innerHTML = '';
-    items.forEach((item, i) => {
-      const el = document.createElement('div');
-      el.className = 'swatch' + (i === selected ? ' sel' : '');
-      const c = '#' + getColor(item).toString(16).padStart(6, '0');
-      el.style.background = `radial-gradient(circle at 35% 30%, #ffffff44, transparent 45%), ${c}`;
-      if (withBetTag) {
-        const tag = document.createElement('span');
-        tag.className = 'bet-tag';
-        tag.textContent = item.bet;
-        el.appendChild(tag);
-      }
-      el.title = item.name;
-      el.addEventListener('click', () => {
-        rowEl.querySelectorAll('.swatch').forEach((s) => s.classList.remove('sel'));
-        el.classList.add('sel');
-        this.onCustomize?.(kind, i);
-      });
-      rowEl.appendChild(el);
-    });
+  // ---- start screen pickers ----
+  _select(rowEl, cls, el) {
+    rowEl.querySelectorAll('.' + cls).forEach((s) => s.classList.remove('sel'));
+    el.classList.add('sel');
   }
 
-  _pickRow(rowEl, items, kind, selected) {
-    rowEl.innerHTML = '';
-    items.forEach((item, i) => {
+  _cowboyCards() {
+    const row = $('cowboy-picks');
+    row.innerHTML = '';
+    const sel = this.wallet.custom.cowboy;
+    this._portraits = [];
+    COWBOYS.forEach((cb, i) => {
       const el = document.createElement('button');
-      el.className = 'pick' + (i === selected ? ' sel' : '');
-      el.textContent = item.name;
-      el.addEventListener('click', () => {
-        rowEl.querySelectorAll('.pick').forEach((s) => s.classList.remove('sel'));
-        el.classList.add('sel');
-        this.onCustomize?.(kind, i);
-      });
-      rowEl.appendChild(el);
+      el.className = 'cowboy-card' + (i === sel ? ' sel' : '');
+      el.title = cb.name;
+      el.innerHTML = `<img class="portrait pending" alt="${cb.name}" draggable="false"><span class="cc-name">${cb.name}</span><span class="cc-check">${icon('i-check')}</span>`;
+      el.addEventListener('click', () => { this._select(row, 'cowboy-card', el); this.onCustomize?.('cowboy', i); });
+      row.appendChild(el);
+      this._portraits.push(el.querySelector('.portrait'));
+    });
+    this.refreshPortraits();
+  }
+
+  // (re)render the three portraits in the current shirt colour
+  refreshPortraits() {
+    const shirt = COWBOY_COLORS[this.wallet.custom.shirt].shirt;
+    const token = (this._portraitToken = (this._portraitToken || 0) + 1);
+    this._portraits.forEach((img, i) => {
+      cowboyPortrait(i, shirt).then((url) => {
+        if (token !== this._portraitToken) return;
+        img.src = url;
+        img.classList.remove('pending');
+      }).catch(() => {});
     });
   }
 
-  _buildSwatches() {
-    const c = this.wallet.custom;
-    this._pickRow($('cowboy-picks'), COWBOYS, 'cowboy', c.cowboy);
-    this._swatchRow($('cowboy-swatches'), COWBOY_COLORS, 'shirt', (i) => i.shirt, c.shirt, false);
-    this._swatchRow($('lasso-swatches'), LASSO_TIERS, 'lasso', (i) => i.color, c.lasso, true);
+  _shirtSwatches() {
+    const row = $('cowboy-swatches');
+    row.innerHTML = '';
+    COWBOY_COLORS.forEach((c, i) => {
+      const el = document.createElement('div');
+      el.className = 'swatch' + (i === this.wallet.custom.shirt ? ' sel' : '');
+      el.style.background = `radial-gradient(circle at 35% 30%, rgba(255,255,255,.35), transparent 45%), ${hex(c.shirt)}`;
+      el.title = c.name;
+      el.addEventListener('click', () => { this._select(row, 'swatch', el); this.onCustomize?.('shirt', i); });
+      row.appendChild(el);
+    });
+  }
+
+  _tierCards() {
+    const row = $('lasso-swatches');
+    row.innerHTML = '';
+    LASSO_TIERS.forEach((t, i) => {
+      const el = document.createElement('button');
+      el.className = 'tier' + (i === this.wallet.custom.lasso ? ' sel' : '');
+      el.style.color = hex(t.color);
+      el.title = t.name;
+      el.innerHTML = `${icon('i-rope')}<span class="t-bet">${icon('i-coin')}${t.bet}</span><span class="t-name">${t.name}</span>`;
+      el.addEventListener('click', () => { this._select(row, 'tier', el); this.onCustomize?.('lasso', i); });
+      row.appendChild(el);
+    });
+  }
+
+  _buildPickers() {
+    this._cowboyCards();
+    this._shirtSwatches();
+    this._tierCards();
     this.refreshHorseName();
   }
 
+  // the horse card on the start screen: name, rarity, coat-coloured mark, stats
   refreshHorseName() {
-    $('horse-name').textContent = getSpecies(this.wallet.custom.horse).name;
+    const sp = getSpecies(this.wallet.custom.horse);
+    const r = RARITY[sp.rarity];
+    $('horse-name').textContent = sp.name;
+    const rar = $('horse-rarity');
+    rar.textContent = r.label;
+    rar.style.color = r.color;
+    this._coatIcon($('horse-mini-ico'), sp);
+    $('horse-mini-stats').innerHTML = this._statBars(speciesStats(sp));
+  }
+
+  _coatIcon(svg, sp) {
+    svg.style.color = hex(sp.coat.base);
+    svg.querySelector('use')?.setAttribute('href', '#i-horse');
+    // the mane takes the mane colour: paint it via a CSS variable on the <use>
+    svg.style.setProperty('--mane', hex(sp.coat.mane));
   }
 
   // ---- stable storefront ----
@@ -144,14 +187,13 @@ export class UI {
       const stats = speciesStats(sp);
       const r = RARITY[sp.rarity];
       const canAfford = this.wallet.balance >= sp.price;
-      const chip = `linear-gradient(135deg, #${sp.coat.base.toString(16).padStart(6, '0')} 60%, #${sp.coat.mane.toString(16).padStart(6, '0')} 60%)`;
       const card = document.createElement('div');
       card.className = 'horse-card' + (equipped ? ' equipped' : '') + (this.previewId === sp.id ? ' previewing' : '');
       card.innerHTML = `
         <div class="card-top">
-          <div class="coat-chip" style="background:${chip}"></div>
+          <svg class="coat-ico" style="color:${hex(sp.coat.base)}"><use href="#i-horse"/></svg>
           <div class="card-name"><b>${sp.name}</b><span class="rarity" style="color:${r.color}">${r.label}</span></div>
-          <div class="card-price ${owned ? 'owned' : ''}">${owned ? (equipped ? 'EQUIPPED' : 'OWNED') : `<span class="coin-ico"></span>${fmt(sp.price)}`}</div>
+          <div class="card-price ${owned ? 'owned' : ''}">${owned ? (equipped ? 'EQUIPPED' : 'OWNED') : `${icon('i-coin')}${fmt(sp.price)}`}</div>
         </div>
         <div class="card-blurb">${sp.blurb}</div>
         <div class="card-stats">${this._statBars(stats)}</div>
@@ -193,7 +235,7 @@ export class UI {
   refreshBet() {
     const tier = LASSO_TIERS[this.wallet.custom.lasso];
     $('bet-value').textContent = tier.bet;
-    $('bet-rope-swatch').style.borderColor = '#' + tier.color.toString(16).padStart(6, '0');
+    $('bet-rope-swatch').style.color = hex(tier.color);
   }
 
   toast(msg, cls = '') {
