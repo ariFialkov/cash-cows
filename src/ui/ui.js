@@ -3,8 +3,7 @@
 // rider (wrangle progress / offer deal / crash cash-out).
 
 import { LASSO_TIERS, fmt } from '../game/economy.js';
-import { COWBOY_COLORS } from '../entities/horse.js';
-import { COWBOYS } from '../entities/cowboyModel.js';
+import { COWBOYS, GARMENTS, PALETTE, playerOutfit } from '../entities/cowboyModel.js';
 import { HORSE_TYPES, HORSE_SPECIES, RARITY, speciesStats, getSpecies } from '../game/horses.js';
 import { cowboyPortrait } from './portraits.js';
 
@@ -68,12 +67,12 @@ export class UI {
     this.refreshPortraits();
   }
 
-  // (re)render the three portraits in the current shirt colour
+  // (re)render the three portraits in the current outfit
   refreshPortraits() {
-    const shirt = COWBOY_COLORS[this.wallet.custom.shirt].shirt;
+    const custom = this.wallet.custom.outfit;
     const token = (this._portraitToken = (this._portraitToken || 0) + 1);
     this._portraits.forEach((img, i) => {
-      cowboyPortrait(i, shirt).then((url) => {
+      cowboyPortrait(i, playerOutfit(i, custom)).then((url) => {
         if (token !== this._portraitToken) return;
         img.src = url;
         img.classList.remove('pending');
@@ -81,17 +80,36 @@ export class UI {
     });
   }
 
-  _shirtSwatches() {
-    const row = $('cowboy-swatches');
-    row.innerHTML = '';
-    COWBOY_COLORS.forEach((c, i) => {
-      const el = document.createElement('div');
-      el.className = 'swatch' + (i === this.wallet.custom.shirt ? ' sel' : '');
-      el.style.background = `radial-gradient(circle at 35% 30%, rgba(255,255,255,.35), transparent 45%), ${hex(c.shirt)}`;
-      el.title = c.name;
-      el.addEventListener('click', () => { this._select(row, 'swatch', el); this.onCustomize?.('shirt', i); });
-      row.appendChild(el);
-    });
+  // one swatch row per garment: "as painted" first, then the palette
+  refreshOutfitRows() {
+    const box = $('outfit-rows');
+    box.innerHTML = '';
+    const cowboy = COWBOYS[this.wallet.custom.cowboy];
+    const custom = this.wallet.custom.outfit;
+    for (const g of GARMENTS) {
+      if (g.needsCoat && !cowboy.hasCoat) continue;
+      const row = document.createElement('div');
+      row.className = 'outfit-row';
+      const label = document.createElement('span');
+      label.className = 'outfit-label';
+      label.textContent = g.name;
+      row.appendChild(label);
+      const sw = document.createElement('div');
+      sw.className = 'swatch-row';
+      const cur = custom[g.key] ?? -1;
+      const add = (index, bg, title) => {
+        const el = document.createElement('div');
+        el.className = 'swatch' + (index < 0 ? ' orig' : '') + (index === cur ? ' sel' : '');
+        el.style.background = bg;
+        el.title = title;
+        el.addEventListener('click', () => { this._select(sw, 'swatch', el); this.onCustomize?.('outfit', { part: g.key, index }); });
+        sw.appendChild(el);
+      };
+      add(-1, 'repeating-linear-gradient(135deg, #6b4a2a 0 4px, #8a6a45 4px 8px)', 'As painted');
+      PALETTE[g.key].forEach((c, i) => add(i, `radial-gradient(circle at 35% 30%, rgba(255,255,255,.35), transparent 45%), ${hex(c)}`, '#' + c.toString(16)));
+      row.appendChild(sw);
+      box.appendChild(row);
+    }
   }
 
   _tierCards() {
@@ -110,7 +128,7 @@ export class UI {
 
   _buildPickers() {
     this._cowboyCards();
-    this._shirtSwatches();
+    this.refreshOutfitRows();
     this._tierCards();
     this.refreshHorseName();
   }

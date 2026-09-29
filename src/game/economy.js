@@ -107,6 +107,9 @@ export class Wallet {
     // migrate pre-cowboy-model saves (cowboy was the shirt colour index)
     if (typeof this.custom.shirt !== 'number') { this.custom.shirt = (this.custom.cowboy | 0) % 4; this.custom.cowboy = 0; }
     this.custom.cowboy = ((this.custom.cowboy | 0) % 3 + 3) % 3;
+    // outfit: a palette index per garment, -1 keeps the model's painted look
+    const outfit = { hat: -1, shirt: -1, scarf: -1, pants: -1, boots: -1, coat: -1 };
+    this.custom.outfit = { ...outfit, ...((this.custom.outfit && typeof this.custom.outfit === 'object') ? this.custom.outfit : {}) };
     // migrate pre-stable saves (horse was a coat index)
     if (typeof this.custom.horse !== 'string') this.custom.horse = 'quarter';
     if (!Array.isArray(this.custom.owned)) this.custom.owned = ['quarter'];

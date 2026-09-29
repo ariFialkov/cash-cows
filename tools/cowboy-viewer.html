@@ -34,7 +34,7 @@ renderer.setScissorTest(true);
 const snap = (i) => { renderer.setViewport(i * W, 0, W, H); renderer.setScissor(i * W, 0, W, H); renderer.render(scene, camera); };
 
 const ct = await loadCowboy(idx);
-const outfit = q.get('random') === '1' ? randomOutfit() : playerOutfit(idx, 0xb03a2e);
+const outfit = q.get('random') === '1' ? randomOutfit() : playerOutfit(idx, {});
 const groundMode = q.get('ground');
 if (groundMode) {
   // off-horse poses: ?ground=roped|tantrum|dustoff|jog|mount&span=2

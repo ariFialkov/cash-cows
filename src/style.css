@@ -351,6 +351,17 @@ body.touch-mode #joystick-base { display: block; }
 .swatch:hover { transform: scale(1.08); }
 .swatch.sel { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(242, 182, 50, .28), inset 0 -3px 6px rgba(0, 0, 0, .35); }
 
+/* outfit rows */
+.outfit-rows { display: flex; flex-direction: column; gap: 7px; }
+.outfit-row { display: flex; align-items: center; gap: 10px; }
+.outfit-label { width: 62px; flex: none; font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--cream-dim); }
+.outfit-row .swatch-row { gap: 6px; flex-wrap: wrap; }
+.outfit-row .swatch { width: 24px; height: 24px; border-width: 1.5px; }
+.outfit-row .swatch.orig::after {
+  content: ""; position: absolute; inset: 4px; border-radius: 50%;
+  border: 1.5px dashed rgba(246, 233, 207, .7);
+}
+
 /* horse card */
 .horse-mini {
   border-radius: 14px; padding: 10px 12px;

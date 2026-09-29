@@ -129,7 +129,7 @@ async function dressPlayer(rig) {
   try {
     const ct = await loadCowboy(idx);
     if (token !== dressToken || !rig.mountCowboy) return;
-    rig.mountCowboy(new SkinnedCowboy(ct, playerOutfit(idx, COWBOY_COLORS[wallet.custom.shirt].shirt)));
+    rig.mountCowboy(new SkinnedCowboy(ct, playerOutfit(idx, wallet.custom.outfit)));
   } catch (err) {
     console.warn('cowboy model failed to load, keeping the built-in rider', err);
   }
@@ -194,11 +194,20 @@ ui.onStableClose = () => {
 
 ui.onCustomize = (kind, i) => {
   sfx.click();
+  if (kind === 'outfit') {
+    // i = { part, index }: re-tint the rider in place and refresh the portraits
+    wallet.custom.outfit[i.part] = i.index;
+    wallet.save();
+    const cb = player.rig.cowboy;
+    if (cb && cb.setOutfit) cb.setOutfit(playerOutfit(wallet.custom.cowboy, wallet.custom.outfit));
+    else dressPlayer(player.rig);
+    ui.refreshPortraits();
+    return;
+  }
   wallet.custom[kind] = i;
   wallet.save();
   applyCustomization();
-  if (kind === 'cowboy') dressPlayer(player.rig);
-  if (kind === 'shirt') ui.refreshPortraits();
+  if (kind === 'cowboy') { dressPlayer(player.rig); ui.refreshOutfitRows(); }
 };
 
 ui.onStart = () => {

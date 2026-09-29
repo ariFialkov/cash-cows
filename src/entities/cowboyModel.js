@@ -1,15 +1,16 @@
 // Skinned cowboys: three rigged humanoid models (humanoid "smartrig"
 // skeleton, T-pose) that ride the skinned horses in place of the procedural
-// rider. Outfits are painted into vertex colours by region (hat, hair, face,
-// hands, shirt, coat, pants, boots, belt, scarf) from a palette, so the
-// player's pick and every rival get their own colours. The riding pose is
-// composed from world-axis limb rotations on top of the bind pose and driven
-// by the same rider parameters the procedural rider uses (torso lean,
-// posting, lasso arm poses).
+// rider. Each wears its own painted texture set (albedo, normal, roughness),
+// and on top of the texture every garment (hat, shirt, bandana, pants,
+// boots, coat) can be recoloured: the mesh is classified into regions by
+// bone weights refined with the texture's own colours, and the shader
+// re-tints a region by luminance so the seams, folds and stitching stay.
+// The riding pose is composed from world-axis limb rotations on top of the
+// bind pose and driven by the same rider parameters the procedural rider
+// uses (torso lean, posting, lasso arm poses).
 
 import * as THREE from 'three';
 import { loadRigTemplate, instantiateRig, setBoneWorldRot } from './horseModel.js';
-import { fbm2 } from '../core/rng.js';
 
 export const COWBOYS = [
   { id: 'ranger',   model: 'cowboy1', name: 'Ranger',   height: 1.78, hasCoat: false, chaps: false },
@@ -17,41 +18,96 @@ export const COWBOYS = [
   { id: 'wrangler', model: 'cowboy3', name: 'Wrangler', height: 1.74, hasCoat: false, chaps: true },
 ];
 
+// garments a rider can recolour (null keeps the texture's own colour)
+export const GARMENTS = [
+  { key: 'hat',   name: 'Hat' },
+  { key: 'shirt', name: 'Shirt' },
+  { key: 'scarf', name: 'Bandana' },
+  { key: 'pants', name: 'Pants' },
+  { key: 'boots', name: 'Boots' },
+  { key: 'coat',  name: 'Coat', needsCoat: true },
+];
+
 export const PALETTE = {
-  skin:  [0xf1c9a5, 0xe0ac86, 0xc68e64, 0x9c6a45, 0x6e4a32, 0x4a3224],
-  hair:  [0x2a1a10, 0x5a3a1e, 0x9a6a3a, 0xd8b26a, 0x8a8a8a, 0x1a1616],
   shirt: [0xb03a2e, 0x2e6fb0, 0x3d7a3a, 0x2f2f33, 0xd9c48f, 0x7a4a8a, 0xe08a2a, 0xf0eee6],
-  pants: [0x33415c, 0x22304a, 0x5a4634, 0x2b2b2b, 0x8a7a5a],
-  hat:   [0x6b4c2a, 0x2b2622, 0xc9b58c, 0x8a6f4d, 0x3a2f2a],
-  boots: [0x3c2713, 0x1f1a17, 0x6b4a2a],
-  scarf: [0xb03a2e, 0x2e6fb0, 0xf0d060, 0xf4f0e6, 0x3d7a3a],
-  coat:  [0x5a4634, 0x3a2f2a, 0x8a7a5a, 0x2b2b2b],
+  pants: [0x33415c, 0x22304a, 0x5a4634, 0x2b2b2b, 0x8a7a5a, 0x6d3f2a],
+  hat:   [0x6b4c2a, 0x2b2622, 0xc9b58c, 0x8a6f4d, 0x3a2f2a, 0x8b2f2a],
+  boots: [0x3c2713, 0x1f1a17, 0x6b4a2a, 0x8a5a3a],
+  scarf: [0xb03a2e, 0x2e6fb0, 0xf0d060, 0xf4f0e6, 0x3d7a3a, 0x7a4a8a],
+  coat:  [0x5a4634, 0x3a2f2a, 0x8a7a5a, 0x2b2b2b, 0x6d3f2a],
 };
 
 const pick = (arr) => arr[(Math.random() * arr.length) | 0];
+// rivals: each garment keeps its painted look half the time, otherwise a palette colour
 export function randomOutfit() {
-  return {
-    skin: pick(PALETTE.skin), hair: pick(PALETTE.hair), shirt: pick(PALETTE.shirt), pants: pick(PALETTE.pants),
-    hat: pick(PALETTE.hat), boots: pick(PALETTE.boots), scarf: pick(PALETTE.scarf), coat: pick(PALETTE.coat),
-  };
+  const o = {};
+  for (const g of GARMENTS) o[g.key] = Math.random() < 0.5 ? null : pick(PALETTE[g.key]);
+  return o;
 }
-// the player's outfit: a fixed look per model, with the shirt from the menu swatch
-export function playerOutfit(cowboyIdx, shirtHex) {
-  const base = [
-    { skin: 0xe0ac86, hair: 0x5a3a1e, pants: 0x33415c, hat: 0x6b4c2a, boots: 0x3c2713, scarf: 0xf0d060, coat: 0x5a4634 },
-    { skin: 0xc68e64, hair: 0x2a1a10, pants: 0x2b2b2b, hat: 0x2b2622, boots: 0x1f1a17, scarf: 0xb03a2e, coat: 0x3a2f2a },
-    { skin: 0xf1c9a5, hair: 0xd8b26a, pants: 0x5a4634, hat: 0xc9b58c, boots: 0x6b4a2a, scarf: 0x2e6fb0, coat: 0x8a7a5a },
-  ][cowboyIdx % 3];
-  return { ...base, shirt: shirtHex };
+// the player's outfit from the saved picks (index per garment, -1 = as painted)
+export function playerOutfit(cowboyIdx, custom = {}) {
+  const o = {};
+  for (const g of GARMENTS) {
+    const i = custom[g.key];
+    o[g.key] = typeof i === 'number' && i >= 0 ? PALETTE[g.key][i % PALETTE[g.key].length] : null;
+  }
+  return o;
+}
+
+// ---------------------------------------------------------------------------
+// Textures: the albedo doubles as a colour sampler for region classification
+
+const texCache = new Map();
+function loadImage(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('texture failed: ' + url));
+    img.src = url;
+  });
+}
+function loadCowboyTextures(model) {
+  if (texCache.has(model)) return texCache.get(model);
+  const base = `${import.meta.env.BASE_URL}models/tex/${model}`;
+  const p = (async () => {
+    const [albedo, normal, rough] = await Promise.all([loadImage(`${base}_albedo.webp`), loadImage(`${base}_normal.webp`), loadImage(`${base}_rough.webp`)]);
+    const mk = (img, srgb) => {
+      const t = new THREE.Texture(img);
+      // the rigs were exported from FBX without textures, so their UVs keep
+      // the FBX convention (v from the bottom): three's default orientation
+      t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+      t.anisotropy = 4;
+      t.needsUpdate = true;
+      return t;
+    };
+    // a small copy of the albedo to read colours from on the CPU
+    const S = 256;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = S;
+    const ctx = cv.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(albedo, 0, 0, S, S);
+    const px = ctx.getImageData(0, 0, S, S).data;
+    const sample = (u, v) => {
+      const x = Math.min(S - 1, Math.max(0, Math.floor(u * S))), y = Math.min(S - 1, Math.max(0, Math.floor((1 - v) * S)));
+      const k = (y * S + x) * 4;
+      return [px[k] / 255, px[k + 1] / 255, px[k + 2] / 255];
+    };
+    return { map: mk(albedo, true), normalMap: mk(normal, false), roughnessMap: mk(rough, false), sample };
+  })();
+  texCache.set(model, p);
+  p.catch(() => texCache.delete(model));
+  return p;
 }
 
 export function loadCowboy(idx) {
   const c = COWBOYS[idx % COWBOYS.length];
-  return loadRigTemplate(c.model, c.height, { humanoid: true }).then((t) => { t.cowboy = c; return t; });
+  return Promise.all([loadRigTemplate(c.model, c.height, { humanoid: true }), loadCowboyTextures(c.model).catch(() => null)])
+    .then(([t, tex]) => { t.cowboy = c; t.tex = tex; return t; });
 }
 
 // ---------------------------------------------------------------------------
-// Outfit painting
+// Outfit painting: per-vertex tint (colour attribute) + [mix, region mean luminance]
 
 const _c = new THREE.Color();
 const GROUP_RULES = [
@@ -62,19 +118,25 @@ const GROUP_RULES = [
   [/UpLeg$/, 'thigh'], [/Leg$/, 'shin'], [/Foot$|ToeBase$|Toe_End$/, 'foot'],
 ];
 function groupName(n) { for (const [re, g] of GROUP_RULES) if (re.test(n)) return g; return 'body'; }
-const DEBUG_COLORS = { hand: 0xff0000, forearm: 0xff8800, arm: 0xffff00, shoulder: 0x88ff00, head: 0x00ff00, neck: 0x00ffaa, chest: 0x00ffff, spine: 0x0088ff, waist: 0x0000ff, hips: 0x8800ff, thigh: 0xff00ff, shin: 0xff0088, foot: 0x884400, body: 0x888888 };
+const DEBUG_COLORS = { skin: 0xf1c9a5, hair: 0x5a3a1e, hat: 0xffff00, hatband: 0x888800, scarf: 0x00ffff, shirt: 0xff0000, coat: 0x8800ff, pants: 0x0000ff, boots: 0x884400, belt: 0x00ff00, buckle: 0x00ff88 };
+// which regions a bone group may hold: the texture's colours settle the rest
+const CANDIDATES = {
+  head: ['hat', 'skin', 'hair'], neck: ['scarf', 'skin', 'shirt'], hand: ['skin'],
+  forearm: ['shirt', 'coat', 'skin'], arm: ['shirt', 'coat'], shoulder: ['shirt', 'coat'], chest: ['shirt', 'coat', 'scarf'], spine: ['shirt', 'coat'],
+  waist: ['shirt', 'coat', 'pants', 'belt'], hips: ['pants', 'coat', 'belt', 'shirt'], thigh: ['pants', 'coat', 'boots'], shin: ['pants', 'boots', 'coat'], foot: ['boots'], body: ['shirt'],
+};
+const srgb2lin = (c) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+const lum = (rgb) => 0.2126 * srgb2lin(rgb[0]) + 0.7152 * srgb2lin(rgb[1]) + 0.0722 * srgb2lin(rgb[2]);
 
-export function paintOutfit(mesh, outfit, cowboy, template, debug = false) {
+// classify every vertex into an outfit region; cached per template
+function classify(mesh, cowboy, template) {
+  if (template.regions) return template.regions;
   const geo = mesh.geometry;
-  const pos = geo.attributes.position;
+  const pos = geo.attributes.position, uv = geo.attributes.uv;
   const si = geo.attributes.skinIndex, sw = geo.attributes.skinWeight;
-  const bones = mesh.skeleton.bones;
-  const names = bones.map((b) => b.name);
+  const names = mesh.skeleton.bones.map((b) => b.name);
   const groupOf = names.map(groupName);
-  // Work in the template scene's world frame (upright, source units) — the
-  // same frame the loader measures in: the geometry is stored rotated and
-  // quantized, so each vertex goes through the template mesh's skinning at
-  // bind and its world matrix. Bone positions come from the template scene.
+  // the template scene's world frame (upright, source units)
   const tm = template.mesh;
   const v = new THREE.Vector3();
   const worldOf = (i) => tm.getVertexPosition(i, v).applyMatrix4(tm.matrixWorld);
@@ -89,13 +151,11 @@ export function paintOutfit(mesh, outfit, cowboy, template, debug = false) {
   const head = bindPos(/Head$/) || new THREE.Vector3(0, bb.min.y + H * 0.87, 0);
   const hips = bindPos(/Hips$/) || new THREE.Vector3(0, bb.min.y + H * 0.55, 0);
   const knee = bindPos(/LeftLeg$/) || new THREE.Vector3(0, bb.min.y + H * 0.29, 0);
-  paintOutfit.lastInfo = { head: head.toArray(), hips: hips.toArray(), knee: knee.toArray(), bb: [bb.min.toArray(), bb.max.toArray()] };
 
-  const col = (hex) => new THREE.Color(hex);
-  const C = { skin: col(outfit.skin), hair: col(outfit.hair), shirt: col(outfit.shirt), pants: col(outfit.pants), hat: col(outfit.hat), boots: col(outfit.boots), scarf: col(outfit.scarf), coat: col(outfit.coat), belt: col(0x3a2414), buckle: col(0xc8a94a), hatband: col(0x2a1d14) };
-  const colors = new Float32Array(pos.count * 3);
+  const n = pos.count;
+  const group = new Array(n), guess = new Array(n), region = new Array(n);
   const w = {};
-  for (let i = 0; i < pos.count; i++) {
+  for (let i = 0; i < n; i++) {
     worldOf(i);
     const x = v.x, y = v.y, z = v.z;
     for (const k in w) w[k] = 0;
@@ -105,45 +165,145 @@ export function paintOutfit(mesh, outfit, cowboy, template, debug = false) {
       w[g] = (w[g] || 0) + wt;
       if (w[g] > dw) { dw = w[g]; dom = g; }
     }
-    if (debug) { _c.setHex(DEBUG_COLORS[dom]); colors[i * 3] = _c.r; colors[i * 3 + 1] = _c.g; colors[i * 3 + 2] = _c.b; continue; }
-
-    const hair = fbm2(x * 0.3, y * 0.3, 5, 2); // fine cloth/skin variation (x, y in cm)
-    const rHead = Math.hypot(x - head.x, z - head.z);     // radial distance from the head axis
-    const brimY = head.y + H * 0.06;                        // hat brim sits just above the eyes
-    // --- default by group ---
+    group[i] = dom;
+    // --- geometric first guess ---
+    const rHead = Math.hypot(x - head.x, z - head.z);
+    const brimY = head.y + H * 0.06;
+    let r;
     if (dom === 'head') {
       const isHat = y > brimY || (rHead > H * 0.075 && y > head.y + H * 0.02);
       const isFace = z > head.z + H * 0.01 && y > head.y - H * 0.02;
-      _c.copy(isHat ? C.hat : isFace ? C.skin : C.hair);
-      if (isHat && y > brimY && y < brimY + H * 0.025 && rHead < H * 0.07) _c.copy(C.hatband);
-    } else if (dom === 'neck') {
-      _c.copy(rHead > H * 0.055 || y < head.y - H * 0.045 ? C.scarf : C.skin);
-    } else if (dom === 'hand') {
-      _c.copy(C.skin);
-    } else if (dom === 'forearm' || dom === 'arm' || dom === 'shoulder' || dom === 'chest' || dom === 'spine') {
-      _c.copy(cowboy.hasCoat ? C.coat : C.shirt);
-      // the duster hangs open: shirt shows down the front
-      if (cowboy.hasCoat && (dom === 'chest' || dom === 'spine') && Math.abs(x) < H * 0.03 && z > head.z) _c.copy(C.shirt);
+      r = isHat ? 'hat' : isFace ? 'skin' : 'hair';
+      if (isHat && y > brimY && y < brimY + H * 0.025 && rHead < H * 0.07) r = 'hatband';
+    } else if (dom === 'neck') r = rHead > H * 0.055 || y < head.y - H * 0.045 ? 'scarf' : 'skin';
+    else if (dom === 'hand') r = 'skin';
+    else if (dom === 'forearm' || dom === 'arm' || dom === 'shoulder' || dom === 'chest' || dom === 'spine') {
+      r = cowboy.hasCoat ? 'coat' : 'shirt';
+      if (cowboy.hasCoat && (dom === 'chest' || dom === 'spine') && Math.abs(x) < H * 0.03 && z > head.z) r = 'shirt';
     } else if (dom === 'waist' || dom === 'hips') {
       const beltY = hips.y + H * 0.02;
-      if (Math.abs(y - beltY) < H * 0.02) _c.copy(Math.abs(x) < H * 0.02 && z > 0 ? C.buckle : C.belt);
-      else if (y > beltY) _c.copy(cowboy.hasCoat ? C.coat : C.shirt);
-      else _c.copy(cowboy.hasCoat && Math.hypot(x, z) > H * 0.14 ? C.coat : C.pants);
-    } else if (dom === 'thigh') {
-      // the duster's skirt hangs outside the legs
-      _c.copy(cowboy.hasCoat && (Math.abs(x) < H * 0.03 || Math.abs(x) > H * 0.11 || z < -H * 0.04) ? C.coat : C.pants);
-    } else if (dom === 'shin') {
-      // boot shafts reach most of the way up the shin
-      _c.copy(y < knee.y - (knee.y - bb.min.y) * 0.18 ? C.boots : C.pants);
-    } else if (dom === 'foot') {
-      _c.copy(C.boots);
-    } else {
-      _c.copy(C.shirt);
+      if (Math.abs(y - beltY) < H * 0.02) r = Math.abs(x) < H * 0.02 && z > 0 ? 'buckle' : 'belt';
+      else if (y > beltY) r = cowboy.hasCoat ? 'coat' : 'shirt';
+      else r = cowboy.hasCoat && Math.hypot(x, z) > H * 0.14 ? 'coat' : 'pants';
+    } else if (dom === 'thigh') r = cowboy.hasCoat && (Math.abs(x) < H * 0.03 || Math.abs(x) > H * 0.11 || z < -H * 0.04) ? 'coat' : 'pants';
+    else if (dom === 'shin') r = y < knee.y - (knee.y - bb.min.y) * 0.18 ? 'boots' : 'pants';
+    else if (dom === 'foot') r = 'boots';
+    else r = 'shirt';
+    guess[i] = r;
+  }
+
+  // --- refine with the texture: each guessed region's typical colour, then
+  // every vertex takes the nearest candidate colour for its bone group ---
+  const tex = template.tex;
+  const meanL = {};
+  if (tex && uv) {
+    const cols = new Array(n);
+    const acc = {};
+    for (let i = 0; i < n; i++) {
+      const c = tex.sample(uv.getX(i), uv.getY(i));
+      cols[i] = c;
+      const a = acc[guess[i]] || (acc[guess[i]] = { r: [], g: [], b: [] });
+      a.r.push(c[0]); a.g.push(c[1]); a.b.push(c[2]);
     }
-    _c.offsetHSL(0, 0, (hair - 0.5) * 0.06);
-    colors[i * 3] = _c.r; colors[i * 3 + 1] = _c.g; colors[i * 3 + 2] = _c.b;
+    const med = (arr) => { const s = arr.slice().sort((p, q) => p - q); return s[s.length >> 1]; };
+    const rep = {};
+    for (const k in acc) if (acc[k].r.length > 12) rep[k] = [med(acc[k].r), med(acc[k].g), med(acc[k].b)];
+    // the bandana: whatever sits in a collar of vertices round the neck axis
+    // between the collarbones and the chin that isn't skin (or beard)
+    const fixed = new Array(n).fill(null);
+    if (rep.skin) {
+      const neckB = bindPos(/Neck$/) || new THREE.Vector3(0, head.y - H * 0.07, 0);
+      const d2 = (p, q) => (p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2 + (p[2] - q[2]) ** 2;
+      const picked = [];
+      for (let i = 0; i < n; i++) {
+        const g = group[i];
+        if (g !== 'neck' && g !== 'chest' && g !== 'shoulder' && g !== 'spine' && g !== 'head') continue;
+        worldOf(i);
+        const rN = Math.hypot(v.x - head.x, v.z - head.z);
+        if (v.y < neckB.y - H * 0.05 || v.y > head.y - H * 0.015 || rN > H * 0.1) continue;
+        const c = cols[i];
+        const skinD = d2(c, rep.skin), hairD = rep.hair ? d2(c, rep.hair) : 1;
+        if (skinD < 0.012 || hairD < 0.008) continue;
+        picked.push(i);
+      }
+      if (picked.length > 25) {
+        for (const i of picked) fixed[i] = 'scarf';
+        const rr = [], gg = [], bb2 = [];
+        for (const i of picked) { rr.push(cols[i][0]); gg.push(cols[i][1]); bb2.push(cols[i][2]); }
+        rep.scarf = [med(rr), med(gg), med(bb2)];
+      } else delete rep.scarf;
+    }
+    for (let i = 0; i < n; i++) {
+      if (fixed[i]) { region[i] = fixed[i]; continue; }
+      const cands = (CANDIDATES[group[i]] || ['shirt']).filter((k) => rep[k] && k !== 'scarf');
+      if (guess[i] === 'belt' || guess[i] === 'buckle' || guess[i] === 'hatband' || cands.length < 2) { region[i] = guess[i] === 'scarf' ? 'shirt' : guess[i]; continue; }
+      const c = cols[i];
+      let best = guess[i], bd = Infinity;
+      for (const k of cands) {
+        const d = (c[0] - rep[k][0]) ** 2 + (c[1] - rep[k][1]) ** 2 + (c[2] - rep[k][2]) ** 2;
+        // a small bias toward the geometric guess keeps stray texels in place
+        const dd = k === guess[i] ? d * 0.6 : d;
+        if (dd < bd) { bd = dd; best = k; }
+      }
+      region[i] = best;
+    }
+    const sums = {};
+    for (let i = 0; i < n; i++) { const s = sums[region[i]] || (sums[region[i]] = [0, 0]); s[0] += lum(cols[i]); s[1]++; }
+    for (const k in sums) meanL[k] = Math.max(0.02, sums[k][0] / sums[k][1]);
+  } else {
+    for (let i = 0; i < n; i++) region[i] = guess[i];
+  }
+  template.regions = { region, meanL };
+  return template.regions;
+}
+
+// write the tint attributes for an outfit (null garments keep the texture)
+export function paintOutfit(mesh, outfit, cowboy, template, debug = false) {
+  const geo = mesh.geometry;
+  const n = geo.attributes.position.count;
+  const { region, meanL } = classify(mesh, cowboy, template);
+  const colors = new Float32Array(n * 3);
+  const info = new Float32Array(n * 2);
+  for (let i = 0; i < n; i++) {
+    const r = region[i];
+    const hex = debug ? DEBUG_COLORS[r] : outfit[r];
+    if (hex === null || hex === undefined) { colors[i * 3] = colors[i * 3 + 1] = colors[i * 3 + 2] = 1; info[i * 2] = 0; }
+    else { _c.setHex(hex); colors[i * 3] = _c.r; colors[i * 3 + 1] = _c.g; colors[i * 3 + 2] = _c.b; info[i * 2] = 1; }
+    info[i * 2 + 1] = meanL[r] || 0.25;
   }
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geo.setAttribute('aTint', new THREE.BufferAttribute(info, 2));
+  paintOutfit.lastInfo = { regions: Object.keys(meanL) };
+}
+
+// the textured rider material: albedo/normal/roughness, plus luminance
+// re-tinting of the garments picked in the outfit (or flat colours when the
+// textures are missing)
+export function cowboyMaterial(template) {
+  const tex = template.tex;
+  const mat = new THREE.MeshStandardMaterial({
+    map: tex ? tex.map : null,
+    normalMap: tex ? tex.normalMap : null,
+    normalScale: new THREE.Vector2(0.7, 0.7),
+    roughnessMap: tex ? tex.roughnessMap : null,
+    roughness: 1, metalness: 0,
+    vertexColors: !tex,
+  });
+  if (!tex) return mat;
+  mat.customProgramCacheKey = () => 'cowboy-tinted';
+  mat.onBeforeCompile = (shader) => {
+    shader.vertexShader = 'attribute vec3 color; attribute vec2 aTint; varying vec3 vTintC; varying vec2 vTintI;\n' + shader.vertexShader
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n vTintC = color; vTintI = aTint;');
+    shader.fragmentShader = 'varying vec3 vTintC; varying vec2 vTintI;\n' + shader.fragmentShader
+      .replace('#include <map_fragment>', `
+        #include <map_fragment>
+        // re-tint by luminance: the garment's shading, seams and folds stay
+        float tl = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
+        vec3 tinted = vTintC * clamp(tl / max(vTintI.y, 0.02), 0.0, 1.7);
+        diffuseColor.rgb = mix(diffuseColor.rgb, tinted, vTintI.x);
+      `);
+  };
+  return mat;
 }
 
 // ---------------------------------------------------------------------------
@@ -182,8 +342,8 @@ export class SkinnedCowboy {
     this.group = new THREE.Group();
     this.group.add(this.model);
     this.outfit = { ...outfit };
+    this.mesh.material = cowboyMaterial(template);
     this.repaint();
-    this.mesh.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 });
 
     // seat the hips at the group origin
     const hips = this.bones.smartrigHips;
@@ -207,7 +367,13 @@ export class SkinnedCowboy {
   }
 
   repaint() { paintOutfit(this.mesh, this.outfit, this.cowboy, this.template); }
-  setShirt(hex) { this.outfit.shirt = hex; this.repaint(); }
+  setOutfit(outfit) { Object.assign(this.outfit, outfit); this.repaint(); }
+  // show the outfit regions as flat colours (tooling)
+  debugRegions() {
+    paintOutfit(this.mesh, this.outfit, this.cowboy, this.template, true);
+    this.mesh.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 });
+  }
+  setShirt(hex) { this.setOutfit({ shirt: hex }); }
 
   animate(armPose, time, g) { Object.assign(this._state, { armPose, time }, g); }
 

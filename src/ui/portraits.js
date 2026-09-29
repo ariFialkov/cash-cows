@@ -4,7 +4,7 @@
 // rather than a name.
 
 import * as THREE from 'three';
-import { COWBOYS, loadCowboy, SkinnedCowboy, playerOutfit } from '../entities/cowboyModel.js';
+import { COWBOYS, loadCowboy, SkinnedCowboy } from '../entities/cowboyModel.js';
 
 const W = 192, H = 232;
 let renderer = null, scene = null, camera = null;
@@ -30,14 +30,14 @@ function ensure() {
   camera = new THREE.PerspectiveCamera(24, W / H, 0.1, 20);
 }
 
-// bust portrait of cowboy `idx` wearing `shirtHex`; cached per (idx, shirt)
-export async function cowboyPortrait(idx, shirtHex) {
-  const key = idx + ':' + shirtHex;
+// bust portrait of cowboy `idx` in `outfit`; cached per (idx, outfit)
+export async function cowboyPortrait(idx, outfit) {
+  const key = idx + ':' + JSON.stringify(outfit);
   if (cache.has(key)) return cache.get(key);
   const job = (async () => {
     ensure();
     const ct = await loadCowboy(idx);
-    const cb = new SkinnedCowboy(ct, playerOutfit(idx, shirtHex));
+    const cb = new SkinnedCowboy(ct, outfit);
     // settle the rest pose (the pose smoother eases toward its target)
     const args = { lean: 0.06, roll: 0, lift: 0, horse: null, speed: 0, turn: 0, dt: 1 / 30, lassoAngle: null, heading: 0, look: new THREE.Vector3(0.35, 0.05, 1) };
     for (let i = 0; i < 50; i++) cb.pose(args);

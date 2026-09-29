@@ -635,9 +635,9 @@ export class SkinnedHorseRider extends HorseRider {
   }
 
   setColors(_coatIdx, shirtIdx) {
+    // only the built-in stand-in rider takes this; a skinned cowboy wears its own outfit
     const cb = COWBOY_COLORS[shirtIdx % COWBOY_COLORS.length];
     this.mats.shirt.color.setHex(cb.shirt);
-    if (this.cowboy) this.cowboy.setShirt(cb.shirt);
   }
 
   // Put a skinned cowboy (cowboyModel.js) in the saddle in place of the
