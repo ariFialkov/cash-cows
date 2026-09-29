@@ -543,7 +543,7 @@ function updateCamera(dt, time) {
     camera.lookAt(camLook);
     const w = window.innerWidth, h = window.innerHeight;
     const sheet = w <= 700 || h >= w;
-    camera.setViewOffset(w, h, sheet ? 0 : w * 0.27, sheet ? h * 0.2 : 0, w, h);
+    camera.setViewOffset(w, h, sheet ? 0 : w * 0.28, sheet ? h * 0.2 : 0, w, h);
     menuOffset = true;
     return;
   }

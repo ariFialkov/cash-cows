@@ -292,7 +292,7 @@ body.touch-mode #joystick-base { display: block; }
   top: calc(70px + env(safe-area-inset-top)); right: 18px;
   /* hugs its content; only scrolls when the window is shorter than the panel */
   max-height: calc(100% - 86px - env(safe-area-inset-top));
-  width: min(600px, 54vw);
+  width: min(600px, 56vw);
   display: flex; flex-direction: column;
   border-radius: 22px;
   background: linear-gradient(160deg, rgba(62, 37, 22, .92), rgba(36, 21, 13, .94));
@@ -320,11 +320,12 @@ body.touch-mode #joystick-base { display: block; }
 /* cowboy cards beside the outfit rows when the panel is wide enough */
 .sec-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 14px; }
 @media (min-width: 1000px) and (min-aspect-ratio: 1/1) {
-  .sec-grid { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.25fr); }
-  .cowboy-card .cc-name { font-size: 9.5px; letter-spacing: .01em; }
-}
-@media (min-width: 1200px) and (min-aspect-ratio: 1/1) {
-  .cowboy-card .cc-name { font-size: 10.5px; letter-spacing: .03em; }
+  .sec-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); }
+  /* the outfit column is narrower here: tighter label and swatches so the
+     nine-swatch shirt row never wraps */
+  .sec-grid .outfit-label { font-size: 9.5px; letter-spacing: .07em; }
+  .sec-grid .outfit-row .swatch { width: 20px; height: 20px; }
+  .sec-grid .outfit-row .swatch-row { gap: 3px; }
 }
 
 .sec { margin-bottom: 12px; }
@@ -359,7 +360,9 @@ body.touch-mode #joystick-base { display: block; }
   object-fit: cover;
 }
 .cowboy-card .portrait.pending { opacity: .35; }
-.cowboy-card .cc-name { display: block; padding: 4px 3px 6px; font-weight: 900; font-size: 11.5px; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cowboy-card { container-type: inline-size; }
+/* the name scales with the card so the longest ("Wrangler") always reads whole */
+.cowboy-card .cc-name { display: block; padding: 4px 2px 6px; font-weight: 900; font-size: clamp(8px, 13.5cqw, 11.5px); letter-spacing: .03em; text-transform: uppercase; white-space: nowrap; }
 .cowboy-card .cc-check {
   position: absolute; top: 6px; right: 6px;
   width: 20px; height: 20px; border-radius: 50%;
@@ -382,9 +385,9 @@ body.touch-mode #joystick-base { display: block; }
 .swatch.sel { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(242, 182, 50, .28), inset 0 -3px 6px rgba(0, 0, 0, .35); }
 
 /* outfit rows */
-.outfit-rows { display: flex; flex-direction: column; gap: 5px; }
-.outfit-row { display: flex; align-items: center; gap: 7px; }
-.outfit-label { width: 50px; flex: none; font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--cream-dim); }
+.outfit-rows { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 5px 7px; align-items: center; }
+.outfit-row { display: contents; }   /* label + swatches sit in the grid; the label column fits its longest word */
+.outfit-label { font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--cream-dim); }
 .outfit-row .swatch-row { gap: 4px; flex-wrap: wrap; }
 .outfit-row .swatch { width: 21px; height: 21px; border-width: 1.5px; }
 .outfit-row .swatch.orig::after {
