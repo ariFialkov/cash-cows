@@ -357,6 +357,10 @@ export class Cow {
     this.pace = 1;
     // body collider radius (herd.js keeps cattle and horses out of each other)
     this.r = 0.58 * this.size * (kind === 'crash' ? 1.15 : 1);
+    // place the model now: a freshly spawned cow otherwise sat at the world
+    // origin (where the rider starts) for the frame before its first update
+    this._settle(0);
+    this.obj.visible = false;
   }
 
   // cattle won't walk into deep water: bend the heading toward the shallower side

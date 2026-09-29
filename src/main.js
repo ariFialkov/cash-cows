@@ -18,7 +18,7 @@ import { loadHorseType, SkinnedHorseRider } from './entities/horseModel.js';
 import { loadCowboy, SkinnedCowboy, playerOutfit } from './entities/cowboyModel.js';
 import { COWBOY_COLORS } from './entities/horse.js';
 import {
-  Wallet, LASSO_TIERS, fmt, round2, winProbForMultiplier,
+  Wallet, LASSO_TIERS, START_BALANCE, fmt, round2, winProbForMultiplier,
   drawOutcome, drawOffer, drawCrashPoint, crashMultAt,
 } from './game/economy.js';
 
@@ -162,7 +162,7 @@ ui.onPreview = (id) => { sfx.click(); showSpecies(id); };
 ui.onBuy = (id) => {
   const sp = getSpecies(id);
   if (wallet.custom.owned.includes(id)) return;
-  if (!wallet.canBet(sp.price)) { ui.toast('Not enough coins for that horse', 'lose'); return; }
+  if (!wallet.canBet(sp.price)) { ui.toast('Not enough cash for that horse', 'lose'); return; }
   wallet.take(sp.price);
   wallet.custom.owned.push(id);
   wallet.custom.horse = id;
@@ -290,7 +290,7 @@ input.onAimEnd = (dx, dy) => {
   const bet = LASSO_TIERS[wallet.custom.lasso].bet;
   if (!wallet.canBet(bet)) {
     lasso.cancelAim();
-    ui.toast(`Not enough coins for a ${bet}-coin lasso`, 'lose');
+    ui.toast(`Not enough cash for a ${fmt(bet)} lasso`, 'lose');
     return;
   }
   aimVectorToTarget(dx, dy);
@@ -365,7 +365,7 @@ function acceptOffer() {
   sfx.click();
   const { cow, bet } = wrangle;
   const mult = cow.offerData.mult;
-  if (!wallet.canBet(bet)) { declineOffer(); ui.toast('Not enough coins!', 'lose'); return; }
+  if (!wallet.canBet(bet)) { declineOffer(); ui.toast('Not enough cash!', 'lose'); return; }
   wallet.take(bet);
   ui.refreshBalance();
   const outcome = drawOutcome(mult);
@@ -412,7 +412,7 @@ function finishWrangle(captured) {
   }
   if (wallet.topUpIfBroke()) {
     ui.refreshBalance();
-    ui.toast('Flat broke! The bank staked you some fresh coins', 'gold');
+    ui.toast(`Flat broke! The bank staked you ${fmt(START_BALANCE)}`, 'gold');
   }
 }
 

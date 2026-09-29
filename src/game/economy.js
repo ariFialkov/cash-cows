@@ -133,6 +133,10 @@ export class Wallet {
 
 export function clamp01(x) { return Math.min(1, Math.max(0, x)); }
 export function round2(x) { return Math.round(x * 100) / 100; }
+// money: every balance, bet, prize and price in the game is real currency,
+// always shown as dollars with cents ($1,000.00)
 export function fmt(x) {
-  return (Math.round(x * 100) / 100).toLocaleString('en-US', { maximumFractionDigits: 2 });
+  const v = Math.round(x * 100) / 100;
+  const s = Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (v < 0 ? '-$' : '$') + s;
 }

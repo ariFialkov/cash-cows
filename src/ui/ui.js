@@ -121,7 +121,7 @@ export class UI {
       el.className = 'tier' + (i === this.wallet.custom.lasso ? ' sel' : '');
       el.style.color = hex(t.color);
       el.title = t.name;
-      el.innerHTML = `${icon('i-rope')}<span class="t-bet">${icon('i-coin')}${t.bet}</span><span class="t-name">${t.name}</span>`;
+      el.innerHTML = `${icon('i-rope')}<span class="t-bet">${fmt(t.bet)}</span><span class="t-name">${t.name}</span>`;
       el.addEventListener('click', () => { this._select(row, 'tier', el); this.onCustomize?.('lasso', i); });
       row.appendChild(el);
     });
@@ -219,7 +219,7 @@ export class UI {
         <div class="card-actions">
           ${owned
             ? (equipped ? '<button class="btn-equipped" disabled>Riding this horse</button>' : '<button class="btn-equip">EQUIP</button>')
-            : `<button class="btn-buy" ${canAfford ? '' : 'disabled'}>${canAfford ? 'BUY' : 'NOT ENOUGH COINS'}</button>`}
+            : `<button class="btn-buy" ${canAfford ? '' : 'disabled'}>${canAfford ? 'BUY' : 'NOT ENOUGH CASH'}</button>`}
         </div>`;
       card.addEventListener('click', () => {
         if (this.previewId !== sp.id) { this.previewId = sp.id; this.onPreview?.(sp.id); this.renderStable(); }
@@ -253,7 +253,7 @@ export class UI {
 
   refreshBet() {
     const tier = LASSO_TIERS[this.wallet.custom.lasso];
-    $('bet-value').textContent = tier.bet;
+    $('bet-value').textContent = fmt(tier.bet);
     $('bet-rope-swatch').style.color = hex(tier.color);
     // a little bounce on the number so the change registers
     const body = $('bet-pill').querySelector('.bet-body');

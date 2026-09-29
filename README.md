@@ -38,7 +38,7 @@ the throw while aiming.
   horse live on the menu; buy once, equip any time. Stats drive real handling:
   a Light horse hits 15 m/s but scrubs speed in sharp turns, a Draft is slow
   to get going but rock steady, a Pony turns on a dime.
-- **Lasso = bet size.** Pick your rope in the menu (5 / 10 / 25 / 100 coins) or
+- **Lasso = bet size.** Pick your rope in the menu ($5 / $10 / $25 / $100) or
   use the arrows on the bet chip in-game. Missed throws cost nothing.
 - **Aim assist.** Throws magnetize to a cow near the landing point (the aim
   ring locks on and turns green) and the loop tracks it in flight, so fleeing
@@ -82,7 +82,7 @@ the throw while aiming.
     exponentially while the bull stomps and gets madder (anger is a pure
     function of time — it never leaks the crash point). Cash out before he
     breaks loose or lose the bet.
-- Broke? The bank stakes you fresh coins (balance and customization persist in
+- Broke? The bank stakes you a fresh $1,000.00 (balance and customization persist in
   `localStorage`).
 
 ## Economy (RTP = 96%)
